@@ -1,0 +1,81 @@
+\chapter{What the Network Hands You, and Where Those Numbers Physically Come From}
+\label{ch:network_outputs}
+
+You show the board to the neural network \textbf{once}. One forward pass. It returns \textbf{two} things, and it is important to understand that they are two different heads of the same network answering two different questions.
+
+\section{The Value Head: Position Outcome Probabilities}
+
+The value head answers: \textit{``How is this position going for the side to move?''}
+
+It outputs three probabilities:
+\begin{align*}
+  w &= \text{probability this position ends in a win for the side to move} \\
+  d &= \text{probability this position ends in a draw} \\
+  l &= \text{probability this position ends in a loss for the side to move} \\[1ex]
+  w + d + l &= 1 \quad \text{(a game must end in exactly one of the three)}
+\end{align*}
+
+\begin{established}[Where These Numbers Physically Come From]
+They are not dice. Chess is deterministic --- the true theoretical outcome of a position is exactly one of win, draw, or loss. These probabilities are the network's \textit{degree of belief}, learned from millions of self-play games. Read $w = 0.60$ as:
+\begin{quote}
+``Among the positions I was trained on that looked like this one, the side to move went on to win about 60\% of the time.''
+\end{quote}
+That is \textbf{epistemic} uncertainty --- uncertainty from limited knowledge, not from randomness in the game.
+\end{established}
+
+Two derived numbers:
+\begin{align*}
+  \text{Expected score} \quad E &= w + 0.5 \cdot d \quad \text{range } [0.0, 1.0] \\
+  \text{Net value} \quad V &= w - l \quad \text{range } [-1.0, +1.0]
+\end{align*}
+and they are the exact same information rescaled:
+\begin{equation}
+  E = 0.5 + 0.5 \cdot V \iff V = 2 \cdot E - 1
+\end{equation}
+
+For our position the network returns \textbf{$V = +0.97602$}.
+
+\begin{center}
+\input{figures/fig_c_wdl.tex}
+\captionof{figure}{\textbf{The WDL outcome simplex and aligned $E$ and $V$ scales.} Expected score $E = w + 0.5d$ and Net value $V = w - l$ represent the same information centered at $0.5$ and $0.0$ respectively.}
+\label{fig:wdl}
+\end{center}
+
+\begin{center}
+\input{figures/fig_c_sharp.tex}
+\captionof{figure}{\textbf{Why WDL matters: sharp vs.\ drawish positions.} Two positions with identical expected score $E = 0.60$ have completely different volatility and risk profiles.}
+\label{fig:sharp}
+\end{center}
+
+\paragraph{Why the search uses $V$ and not $E$.}
+Chess is zero-sum. Whatever is good for White by exactly that much is bad for Black. On the $V$ scale, switching sides is a single multiplication:
+\begin{equation}
+  V_{\text{from the other side}} = -V
+\end{equation}
+On the $E$ scale you would have to write $1 - E$, which is clumsier to propagate. That sign flip is the whole reason $V$ exists.
+
+\section{The Policy Head: Move Attention Distribution}
+
+The policy head answers: \textit{``Which moves look worth examining?''}
+
+For our position:
+\begin{center}
+\begin{tabular}{lrr}
+  \toprule
+  Move & Policy Prior $P$ & Percentage \\
+  \midrule
+  \textbf{Kd6} & 0.4513 & 45.13\% \\
+  \textbf{Kf6} & 0.4423 & 44.23\% \\
+  \textbf{Kf5} & 0.0538 & 5.38\% \\
+  \textbf{Kd5} & 0.0526 & 5.26\% \\
+  \midrule
+  \textbf{Total} & & 100.00\% \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{established}[What $P$ Is Not]
+$P$ is \textit{not} the evaluation of the move. The network has not looked at any of these positions. $P$ is a trained reflex --- ``in positions of this shape, these are the moves that turned out to be worth examining.'' It is attention, not judgement.
+\end{established}
+
+Notice the network put 89.4\% of its attention on the two winning king moves and still left 10.6\% on the two that throw the win away. It is not certain. Good --- that residue is what lets the search check them cheaply and move on.

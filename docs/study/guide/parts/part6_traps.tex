@@ -1,0 +1,28 @@
+\chapter{Traps for System Developers}
+\label{ch:traps}
+
+We highlight critical technical gotchas when building software tools on top of LC0 evaluations.
+
+\section{The FEN-vs-History Discrepancy}
+
+\begin{realdata}[Bare FEN vs FEN with History]
+\begin{center}
+\begin{minipage}{\linewidth}
+\captionsetup{type=figure}
+\centering
+\subcaptionbox{Bare FEN: $V = +0.98838, d = 0.012$}{\input{figures/fig_6_1a.tex}}\qquad
+\subcaptionbox{FEN-with-History: $V = +0.95129, d = 0.049$}{\input{figures/fig_6_1b.tex}}
+\captionof{figure}{\textbf{FIG-6.1: Same board, two histories.} Evaluating the position after 1.Kf6 Kf8 with bare FEN vs move history yields a $0.037$ shift in net value $V$ (Equation~\eqref{eq:E2}) and 4$\times$ draw probability, because bare FENs force the engine to fabricate repeated position history.}
+\label{fig:6_1}
+\end{minipage}
+\end{center}
+\end{realdata}
+
+\section{Closing Summary Card}
+
+\begin{center}
+\input{figures/fig_6_2.tex}
+\captionof{figure}{\textbf{FIG-6.2: Product visual guide mapping summary card.} Reference mapping UI display features to underlying search engine mechanics (Equations~\eqref{eq:E1}--\eqref{eq:E12}).}
+\label{fig:6_2}
+\end{center}
+

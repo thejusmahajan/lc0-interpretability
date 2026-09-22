@@ -1,0 +1,60 @@
+\chapter{$Q$, the Running Average (and What $x_n$ Physically Is)}
+\label{ch:q_average}
+
+\begin{studentq}
+``So the $x_n$ are the values from the value heads, that is $V$'s of each position arising when a new candidate is visited. Correct?'' --- Yes, exactly.
+\end{studentq}
+
+Each time the search goes down arrow $a$ and eventually evaluates some position at the bottom, one number comes back. Call the $n$-th such number $x_n$.
+
+\begin{align*}
+  W(a) &= x_1 + x_2 + \dots + x_n \quad \text{(running total)} \\
+  n(a) &= \text{how many times we went down this arrow} \\
+  Q(a) &= \frac{W(a)}{n(a)} \quad \text{(the average)}
+\end{align*}
+
+$Q$ is a \textbf{sample mean}. Nothing more exotic than that.
+
+The incremental form (which is what the code actually does, so it never has to store the list) is:
+\begin{equation}
+  Q_{\text{new}} = Q_{\text{old}} + \frac{x_n - Q_{\text{old}}}{n}
+\end{equation}
+
+Check it once by hand, with $x_1 = 0.968$ then $x_2 = 0.900$:
+\begin{align*}
+  n=1: \quad & Q = 0.968 \\
+  n=2: \quad & Q = 0.968 + \frac{0.900 - 0.968}{2} = 0.968 - 0.034 = \mathbf{0.934} \\
+  \text{check:} \quad & \frac{0.968 + 0.900}{2} = \mathbf{0.934} \quad \text{(agrees)}
+\end{align*}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\input{figures/fig_c_qmean.tex}
+\captionof{figure}{\textbf{Running-mean convergence and step damping.} Volatile leaf evaluations $x_n$ are smoothed into a stable sample mean $Q_n$ via step size $1/n$.}
+\label{fig:qmean}
+\end{minipage}
+\end{center}
+
+\section{The Sign Flip, Carefully}
+
+$x_n$ arrives from a position where it is the \textit{opponent's} turn. The network reports $V$ from the point of view of whoever is to move there. So before adding it into our total we negate it:
+\begin{equation}
+  x_n = -V(\text{child position})
+\end{equation}
+
+In our endgame, after \texttt{Kd6} it is Black to move, and the network says Black stands at about \textbf{$-0.968$} (Black is losing). White's edge records:
+\begin{equation}
+  x_1 = -(-0.968) = \mathbf{+0.968}
+\end{equation}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\input{figures/fig_c_signflip.tex}
+\captionof{figure}{\textbf{The Negamax sign-flip across alternating plies.} $x_n = -V(\text{child})$ guarantees that every node accumulates value from its own perspective.}
+\label{fig:signflip}
+\end{minipage}
+\end{center}
+
+This is why the guide's figure shows the value ``flipping sign at every level.'' It is the same fact as $V_{\text{parent}} = -V_{\text{child}}$ from Chapter~\ref{ch:network_outputs}.

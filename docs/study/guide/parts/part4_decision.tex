@@ -1,0 +1,55 @@
+\chapter{Reading What the Engine Decided}
+\label{ch:decision}
+
+We analyze how visit counts and evaluation proofs determine the final played move.
+
+\section{The Moment the Engine Changed Its Mind}
+
+In the Morphy position (\texttt{4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w k - 0 16}), white has a forced mate in 2 starting with 16.Qb8+!
+
+\begin{realdata}[Morphy Mind Change]
+\begin{center}
+\begin{minipage}{\linewidth}
+\captionsetup{type=figure}
+\centering
+\subcaptionbox{64 nodes: Qb7 (bestmove)}{\input{figures/fig_4_1a.tex}}\qquad
+\subcaptionbox{128 nodes: Qb7 (bestmove)}{\input{figures/fig_4_1b.tex}}\\[2ex]
+\subcaptionbox{400 nodes: Qb7 (bestmove)}{\input{figures/fig_4_1c.tex}}\qquad
+\subcaptionbox{1600 nodes: Qb8+ (N=3, Q=1.000)}{\input{figures/fig_4_1d.tex}}\\[2ex]
+\subcaptionbox{6400 nodes: Qb8+ (identical state)}{\input{figures/fig_4_1e.tex}}
+\captionof{figure}{\textbf{FIG-4.1: Mind change progression.} Through 400 nodes, Qb8+ has zero visits. At 1600 nodes, 3 visits yield $Q=1.000$ (proof of mate), causing bestmove to flip from Qb7 to Qb8+ via PUCT selection (Equation~\eqref{eq:E10}). At 6400 nodes, state remains identical.}
+\label{fig:4_1}
+\end{minipage}
+\end{center}
+\end{realdata}
+
+\section{Proof Beats Sampling}
+
+\begin{realdata}[Exact Proofs vs Statistical Sampling]
+\begin{center}
+\input{figures/fig_4_2.tex}
+\captionof{figure}{\textbf{FIG-4.2: Proof outranks sampling.} A move visited 3 times with a proven mate ($Q=1.000$) outranks a move sampled 172 times with $Q=0.659$ (Equation~\eqref{eq:E4}).}
+\label{fig:4_2}
+\end{center}
+\end{realdata}
+
+\section{Policy Proposes, Value Disposes}
+
+\begin{realdata}[Policy and Value Interaction]
+\begin{center}
+\input{figures/fig_4_3.tex}
+\captionof{figure}{\textbf{FIG-4.3: Policy proposes, value disposes.} Policy assigns 89.36\% to winning moves and 10.64\% to draws. Value head scores the drawing slice $0.000$ on first visit (Equation~\eqref{eq:E2}).}
+\label{fig:4_3}
+\end{center}
+\end{realdata}
+
+\section{Which Number Chooses the Move?}
+
+\begin{established}[Visit Ranking vs Evaluation]
+\begin{center}
+\input{figures/fig_4_4.tex}
+\captionof{figure}{\textbf{FIG-4.4: Move decision flowchart.} Candidates are ranked by visit count $n_a$. High $Q$ on low $n_a$ is a question, not an answer, unless $Q=1.000$ (proof).}
+\label{fig:4_4}
+\end{center}
+\end{established}
+

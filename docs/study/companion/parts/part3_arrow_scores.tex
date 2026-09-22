@@ -1,0 +1,16 @@
+\chapter{Every Arrow Carries Exactly Two Numbers That Matter}
+\label{ch:arrow_scores}
+
+To choose which arrow to take, the engine computes one score per arrow:
+\begin{equation}
+  S(a) = \underbrace{Q(a)}_{\text{what we know}} + \underbrace{U(a)}_{\text{how much we still want to look}}
+\end{equation}
+
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{$Q$ is memory.} What came back from the times we already went down this arrow.
+  \item \textbf{$U$ is curiosity.} How much attention this arrow deserves given that we have not looked much yet.
+\end{itemize}
+
+\begin{established}[The Selection Rule]
+The engine always takes the arrow with the largest $S$. That is the entire selection rule. Everything else is bookkeeping for these two numbers.
+\end{established}

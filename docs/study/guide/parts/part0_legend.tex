@@ -1,0 +1,220 @@
+\chapter{Part 0: Foundations — The Mathematician's Toolset}
+\label{ch:foundations}
+
+Before analyzing search tree iterations or neural network evaluations, we must establish the core statistical and computational tools that govern Monte-Carlo Tree Search (MCTS). This chapter provides the rigorous mathematical foundations for every quantity and equation appearing in this guide.
+
+\section{How to Read These Pictures}
+\label{sec:0_1}
+
+Every search-tree diagram in this document is drawn using a fixed visual grammar. The meaning of every border, color, arrow, and bar is defined here once and remains constant throughout the guide.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/fig_0_1.tex}
+\caption{\textbf{FIG-0.1: The visual grammar legend.} Node borders, fill saturations, path highlights, edge thicknesses, and physics bridge boxes maintain byte-identical definitions across all tree frames.}
+\label{fig:0_1}
+\end{figure}
+
+\begin{keyidea}
+Solid blue borders represent expanded nodes evaluated by the network; dashed grey borders represent unvisited nodes whose $Q$ value is an FPU (First Play Urgency) guess. The thick green border marks a node created on the current iteration, while red fill indicates a refuted move where $Q$ collapsed.
+\end{keyidea}
+
+\section{Notation and Conventions}
+\label{sec:0_2}
+
+To navigate tree search equations unambiguously, we maintain strict distinctions between absolute state properties and side-to-move relative evaluations.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/fig_0_2.tex}
+\caption{\textbf{FIG-0.2: Core Symbol \& Notation Reference Table.} Every symbol used in the UCB1, UCT, and PUCT equations, detailing type, domain range, and frame-of-reference (side-to-move relative vs absolute).}
+\label{fig:0_2}
+\end{figure}
+
+\begin{established}[Negamax Frame of Reference]
+All scalar evaluation quantities ($V, W, Q, U, S, Q_{\text{FPU}}$) are always expressed \textbf{from the perspective of the player to move at that specific node}. If White is to move at node $s$, $V(s) = +0.97$ means White is winning; if Black is to move at node $s'$, $V(s') = +0.95$ means Black is winning. Absolute quantities ($N, n_a, P, w, d, l$) do not change sign.
+\end{established}
+
+\section{What the Numbers Mean: Score, Expectation, WDL}
+\label{sec:0_3}
+
+Traditional engines output evaluations in \textbf{centipawns} ($\text{cp}$), where $+100\,\text{cp}$ represents a one-pawn advantage. Leela Chess Zero (LC0) operates natively on probability distributions over game outcomes: Win ($w$), Draw ($d$), and Loss ($l$), subject to the simplex constraint $w + d + l = 1$.
+
+\subsection{Expected Score and Net Value}
+
+The observable outcome of a chess game yields $1.0$ for a win, $0.5$ for a draw, and $0.0$ for a loss. The expected score $\mathbb{E}[\text{score}]$ of a position is:
+\begin{equation}
+\label{eq:E1}
+\boxed{\;\mathbb{E}[\text{score}] \;=\; w \;+\; \frac{1}{2}d\;}
+\end{equation}
+
+For internal search arithmetic, LC0 maps the expected score onto the symmetric interval $[-1, +1]$ via net value $V$:
+\begin{equation}
+\label{eq:E2}
+\boxed{\;V \;=\; w \;-\; l \;\in\; [-1, +1]\;}
+\end{equation}
+where $V = +1$ represents a guaranteed win, $V = 0$ represents a balanced draw, and $V = -1$ represents a guaranteed loss. Draw probability is recovered via $d = 1 - w - l$.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/fig_0_3.tex}
+\caption{\textbf{FIG-0.3: Expected score and the WDL Simplex.} The barycentric simplex $w+d+l=1$. Measured engine data points are plotted for the initial position, an opposition draw, the root endgame, and Morphy's Opera game position.}
+\label{fig:0_3}
+\end{figure}
+
+\subsection{Centipawn Conversion}
+
+When communicating with UCI chess GUIs, centipawn evaluations are derived from expected score using a logistic mapping:
+\begin{equation}
+\label{eq:E3}
+\boxed{\;\mathbb{E}[\text{score}] \;=\; \frac{1}{1 \;+\; 10^{-\text{cp}/400}}\;}
+\end{equation}
+
+\begin{figure}[htbp]
+\centering
+\input{figures/fig_0_4.tex}
+\caption{\textbf{FIG-0.4: Logistic Centipawn $\leftrightarrow$ Probability conversion curve.} Demonstrating the non-linear saturation of centipawns: $+140\,\text{cp} \approx 70\%$ expected score, while $+400\,\text{cp} \approx 91\%$.}
+\label{fig:0_4}
+\end{figure}
+
+\section{Why a Move's Value Must Be Sampled}
+\label{sec:0_4}
+
+A move's true value $\mu$ is the outcome under minimax play from that move --- a quantity far beyond exhaustive calculation. In MCTS, we estimate $\mu$ by examining continuations. Each visit to move $a$ yields a single-look evaluation $x_i \in [-1, +1]$.
+
+\subsection{The Incremental Sample Mean}
+
+After $n$ visits returning samples $x_1, x_2, \dots, x_n$, the estimated value $Q_n$ is the sample mean:
+\begin{equation}
+\label{eq:E4}
+\boxed{\;Q_n \;=\; \frac{W_n}{n} \;=\; Q_{n-1} \;+\; \frac{1}{n}\,\bigl(x_n - Q_{n-1}\bigr)\;}
+\end{equation}
+where $W_n = \sum_{i=1}^n x_i$ is the accumulated backed-up value.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/fig_0_5.tex}
+\caption{\textbf{FIG-0.5: Incremental sample mean convergence.} Demonstrating how $Q_n$ settles over 6 visits. Early samples cause large shifts ($\frac{1}{2}$ step size), while later samples damp fluctuations ($\frac{1}{6}$ step size).}
+\label{fig:0_5}
+\end{figure}
+
+\begin{bridge}[Law of Large Numbers and Non-Uniform Sampling]
+By the Law of Large Numbers (LLN), the sample mean $Q_n = W_n/n$ converges to the expected outcome under repeated evaluations. Classical Monte Carlo estimates expectations by sampling uniformly across state space. MCTS, by contrast, relies on \textbf{deliberately non-uniform sampling}: it focuses computational budget heavily on high-prior and high-value branches, turning an intractable sum over the full game tree into an efficient, convergent estimator.
+\end{bridge}
+
+\section{How Wrong Is a Sample Mean?}
+\label{sec:0_5}
+
+An engine cannot rank moves solely by $Q_n$; it must quantify uncertainty to decide where to allocate further visits.
+
+\subsection{The $1/\sqrt{n}$ Standard Error Law}
+
+If samples are independent draws with standard deviation $\sigma$, the standard error of $Q_n$ is:
+\begin{equation}
+\label{eq:E5}
+\boxed{\;\text{SE}(Q_n) \;=\; \frac{\sigma}{\sqrt{n}}\;}
+\end{equation}
+
+\subsection{Concentration Bounds and Confidence Radius}
+
+Using Hoeffding's inequality for bounded random variables in interval width $R = 2$, the probability that the true mean $\mu$ exceeds $Q_n$ by more than $\epsilon$ satisfies:
+$$\Pr(\mu \ge Q_n + \epsilon) \le \exp\left(-\frac{2n\epsilon^2}{R^2}\right)$$
+
+Inverting this for failure probability $\delta$ yields the confidence radius $\epsilon$:
+\begin{equation}
+\label{eq:E6}
+\boxed{\;\epsilon \;=\; R\,\sqrt{\frac{\ln(1/\delta)}{2n}}\;}
+\end{equation}
+
+\begin{figure}[htbp]
+\centering
+\input{figures/fig_0_6.tex}
+\caption{\textbf{FIG-0.6: Standard error $1/\sqrt{n}$ law and confidence radius.} Driving uncertainty down from $\epsilon = 0.490$ ($n=25$) to $\epsilon = 0.122$ ($n=400$) requires a $16\times$ increase in visits.}
+\label{fig:0_6}
+\end{figure}
+
+\begin{bridge}[Diffusion and Random Walk Scaling]
+In Brownian motion, the root-mean-square displacement scales as $\Delta x_{\text{rms}} \propto \sqrt{t}$. The inverse relationship appears in statistical sampling: the error radius shrinks as $1/\sqrt{n}$. Halving spatial uncertainty in a diffusion process requires $4\times$ the elapsed time; halving value uncertainty in MCTS requires $4\times$ the sample size.
+\end{bridge}
+
+\section{Optimism Under Uncertainty — And Where $\ln N$ Comes From}
+\label{sec:0_6}
+
+To minimize \textbf{regret} (wasted visits on inferior moves), an agent should follow the principle of \textbf{Optimism in the Face of Uncertainty}: rank options by their Upper Confidence Bound $Q_i + \epsilon_i$.
+
+\subsection{Union Bounds and UCB1}
+
+Why must a logarithm appear in confidence bounds rather than a power or linear term? The logarithm arises directly from demanding simultaneous confidence over multiple events:
+
+\begin{enumerate}[label=(\alph*)]
+\item \textbf{Single-Event Radius}: For one arm $i$ at visit count $n_i$, Hoeffding's inequality (Equation~\eqref{eq:E6}) bounds single-tail failure probability by $\delta_i = \exp(-2n_i\epsilon_i^2/R^2)$.
+\item \textbf{Simultaneous Coverage via Union Bound}: To guarantee that the confidence interval holds \textit{simultaneously} across all $K$ candidate moves at every step up to total visits $N$, we must protect against $M \approx K \cdot N^p$ potential failure events. By Boole's inequality (the union bound), the total failure probability is bounded by the sum of individual error probabilities:
+$$\Pr(\text{any bound fails}) \;\le\; \sum_{i=1}^{M} \delta_i \;\le\; M \cdot \delta_i$$
+To enforce overall failure probability $\delta_{\text{total}} \le \alpha$, each individual event's failure tolerance must shrink like $\delta_i \sim \frac{\alpha}{K N^p}$.
+\item \textbf{Logarithmic Cheapness}: Inverting for the confidence radius yields:
+$$\epsilon_i \;=\; R\,\sqrt{\frac{\ln(1/\delta_i)}{2n_i}} \;=\; R\,\sqrt{\frac{\ln K + p\ln N + \ln(1/\alpha)}{2n_i}}$$
+Because $\epsilon$ depends on $\delta$ strictly through $\sqrt{\ln(1/\delta)}$, protecting against $M = 10^6$ simultaneous events widens the interval by only $\sqrt{\ln 10^6 / \ln 10} \approx 2.45\times$ compared to protecting $M = 10$. Simultaneous confidence over a massive event space is remarkably cheap — and *that* is why a logarithm appears.
+\item \textbf{Design Exponent}: Setting per-step failure rate $\delta = N^{-4}$ yields the classic UCB1 formula (Auer et al., 2002):
+\end{enumerate}
+
+\begin{equation}
+\label{eq:E7}
+\boxed{\;a^* \;=\; \argmax_{i} \left[\; Q_i \;+\; c\,\sqrt{\frac{\ln N}{n_i}} \;\right]\;}
+\end{equation}
+
+The exponent $p = 4$ is a design choice trading interval width against overall confidence, not a law of physics.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/fig_0_7.tex}
+\caption{\textbf{FIG-0.7: Simultaneous confidence and UCB1 derivation.} The confidence radius $\epsilon \propto \sqrt{\ln M}$ plotted against the number of protected events $M = 1/\delta$. Protecting against $100,000\times$ more events ($M=10^1 \to 10^6$) widens $\epsilon$ by only $2.45\times$, demonstrating why simultaneous confidence requires only logarithmic width.}
+\label{fig:0_7}
+\end{figure}
+
+\section{From One Node to a Tree: Nested Bandits and the Sign Flip}
+\label{sec:0_7}
+
+Extending single-node bandit selection across an entire game tree produces UCT (Upper Confidence bounds applied to Trees; Kocsis \& Szepesv\'ari, 2006).
+
+\subsection{Negamax Backup and UCT Selection}
+
+In a zero-sum game, a position carries opposite net evaluations depending on who is to move: $V_{\text{white}} + V_{\text{black}} = 0$. Because value $V$ is defined relative to the side to move at each node, backpropagation alternates sign at every ply:
+\begin{equation}
+\label{eq:E8}
+\boxed{\;V_{\text{parent}} \;=\; -V_{\text{child}}\;}
+\end{equation}
+
+UCT applies UCB1 locally at every tree node $s$:
+\begin{equation}
+\label{eq:E9}
+\boxed{\;a^* \;=\; \argmax_{a} \left[\; Q(s,a) \;+\; c\,\sqrt{\frac{\ln N(s)}{n_a}} \;\right]\;}
+\end{equation}
+
+\begin{figure}[htbp]
+\centering
+\input{figures/fig_0_8.tex}
+\caption{\textbf{FIG-0.8: Nested bandits and Negamax sign flips.} Backpropagation path showing $V(s_3) = -0.6$ flipping sign to $+0.6$ at White parent $s_2$, $-0.6$ at Black node $s_1$, and $+0.6$ at White root $s_0$.}
+\label{fig:0_8}
+\end{figure}
+
+\section{Why This Is Not Enough for Chess}
+\label{sec:0_8}
+
+Standard UCT treats unvisited edges as having infinite bonus ($n_a = 0 \implies U = \infty$), forcing mandatory first visits on all legal moves before any move receives a second look.
+
+In chess, with an average branching factor of $K \approx 31$, visiting all 46 legal moves at the root consumes 46 visits before a single move can be explored to depth 2. On realistic node budgets, UCT spends almost its entire time probing absurd blunders.
+
+This fundamental limitation necessitates replacing blind statistical exploration with learned prior attention $P(a \mid s)$, leading directly to the \textbf{PUCT formula} analyzed in Section~\ref{sec:1_2}.
+
+\section{The Equation Register}
+\label{sec:0_9}
+
+Every equation introduced across this guide is indexed below for cross-reference.
+
+\begin{figure}[htbp]
+\centering
+\input{figures/fig_0_9.tex}
+\caption{\textbf{FIG-0.9: The Master Equation Register (E1--E12).} Summary table mapping equation labels, formulas, section introduced, and core role within LC0's search architecture.}
+\label{fig:0_9}
+\end{figure}
+

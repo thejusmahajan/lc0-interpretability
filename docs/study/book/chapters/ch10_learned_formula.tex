@@ -1,0 +1,401 @@
+\chapter{From a hand-made formula to a learned one}
+\label{ch:learned}
+
+\begin{objectives}
+\begin{itemize}
+\item Turn the hand-tuned evaluation $f(s) = \sum_i w_i\phi_i(s)$ of Chapter~\ref{ch:problem}
+  into a formula whose weights are found from data.
+\item Understand a derivative as a slope, and perform two steps of gradient descent by hand.
+\item Say why a probability output needs the logistic function and a different loss.
+\item \emph{Prove} that a linear formula cannot express "opposite-side castling is sharp",
+  and then build the two-neuron network that can.
+\item Perform a forward pass through a small network by hand and get the right answer.
+\end{itemize}
+\end{objectives}
+
+\section{The only change that matters}
+
+Chapter~\ref{ch:problem} left us with
+\[
+  f(s) \;=\; \sum_{i=1}^{k} w_i\,\phi_i(s) ,
+\]
+features $\phi_i$ chosen by a person, weights $w_i$ tuned by a person. Part~\textsc{iv} is
+about replacing "by a person" with "by data", twice: first the weights (this chapter), then
+the features themselves (Chapter~\ref{ch:attention}).
+
+Nothing exotic arrives. A neural network is this same equation, applied several times in a
+row, with a non-linear squash in between. If you understand this chapter, the only genuinely
+new idea left in the whole of Part~\textsc{iv} is \emph{attention}, and that is one chapter.
+
+\section{Learning the weights}
+
+\subsection{The data and the target}
+
+Take a large pile of positions in which the eventual result is known --- for Leela, positions
+from its own self-play games. Each example is a pair: a position $s$ and a target $y$, the
+result from the side to move's point of view ($+1$ win, $0$ draw, $-1$ loss).
+
+We want weights that make $f(s)$ close to $y$ across the pile. "Close" needs a definition;
+the standard one is squared error, summed over $M$ examples:
+\begin{equation}
+  \label{eq:mse}
+  L(w) \;=\; \frac{1}{M}\sum_{m=1}^{M}\bigl(f(s_m) - y_m\bigr)^2 .
+\end{equation}
+Squaring does two jobs: it makes errors positive regardless of direction, and it punishes
+large errors disproportionately (being wrong by $0.8$ is sixteen times worse than being wrong
+by $0.2$, not four times).
+
+\begin{notationbox}
+$L$ is the \textbf{loss}: one number saying how badly the current weights fit the data. All
+of training is the search for weights that make it small. "Training a network" and
+"minimising $L$" are the same sentence.
+\end{notationbox}
+
+\subsection{Which way is downhill?}
+
+We need to change $w$ so $L$ falls. The tool is the \textbf{derivative}, and for our purposes
+it needs no more definition than this:
+
+\begin{keyidea}
+$\dfrac{\partial L}{\partial w_i}$ is the \textbf{slope} of the loss with respect to weight
+$i$: how much $L$ changes if you nudge $w_i$ up by a tiny amount. If the slope is positive,
+increasing $w_i$ makes things worse, so decrease it. If negative, increase it. That is the
+entire idea.
+\end{keyidea}
+
+So the update rule writes itself --- move each weight \emph{against} its slope:
+\begin{equation}
+  \label{eq:gd}
+  w_i \;\leftarrow\; w_i \;-\; \eta\,\frac{\partial L}{\partial w_i},
+\end{equation}
+where $\eta$ (the \textbf{learning rate}) is how big a step to take. This is
+\textbf{gradient descent}: walk downhill, one small step at a time.
+
+For our linear $f$ and squared loss, the slope has a form you can compute in your head. With
+$f(s) = \sum_i w_i \phi_i(s)$,
+\[
+  \frac{\partial L}{\partial w_i}
+  \;=\; \frac{2}{M}\sum_{m}\bigl(f(s_m) - y_m\bigr)\,\phi_i(s_m) .
+\]
+Read it in words: \emph{(how wrong I was) $\times$ (how much this feature was present)}. A
+feature that was absent gets no blame; a feature that was present in a badly-predicted
+position gets a lot.
+
+\begin{worked}{two steps of gradient descent, by hand}
+One feature: $\phi_1 =$ material balance in pawns. Three training positions
+\emph{(illustrative)}:
+\begin{center}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+ & $\phi_1$ & target $y$ \\
+\midrule
+Position A & $+3$ & $+1.0$ (was won) \\
+Position B & $+1$ & $+0.4$ \\
+Position C & $-2$ & $-0.8$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Start from $w_1 = 0$ (knowing nothing), learning rate $\eta = 0.05$.
+
+\medskip
+\textbf{Step 1.} Predictions $f = 0$ everywhere. Errors $(f - y)$: $-1.0$, $-0.4$, $+0.8$.
+\[
+\frac{\partial L}{\partial w_1} = \frac{2}{3}\bigl[(-1.0)(3) + (-0.4)(1) + (0.8)(-2)\bigr]
+= \frac{2}{3}\bigl[-3 - 0.4 - 1.6\bigr] = \frac{2}{3}(-5.0) = -3.333 .
+\]
+Negative slope, so increase:
+$w_1 \leftarrow 0 - 0.05(-3.333) = +0.1667$.
+
+\medskip
+\textbf{Step 2.} Predictions are now $0.500,\ 0.167,\ -0.333$. Errors:
+$-0.500,\ -0.233,\ +0.467$.
+\[
+\frac{\partial L}{\partial w_1} = \frac{2}{3}\bigl[(-0.5)(3) + (-0.233)(1) + (0.467)(-2)\bigr]
+= \frac{2}{3}(-2.667) = -1.778 ,
+\]
+\[
+w_1 \leftarrow 0.1667 - 0.05(-1.778) = 0.2556 .
+\]
+
+\medskip
+The slope shrank from $-3.33$ to $-1.78$: we are approaching the bottom. Two further steps
+give $w_1 = 0.30297$ and then $w_1 = 0.32825$, converging towards the exact minimiser
+$w_1 = 5/14 = 0.3571$ (Exercise~\ref{ex:ch10:exact} derives it). We have just \emph{learned}
+that a pawn is worth about a third of a game result --- from three positions, with no chess
+knowledge whatsoever in the algorithm.
+\end{worked}
+
+\begin{pitfall}
+The learning rate is the whole practical difficulty. Too small and training takes forever; too
+large and the step overshoots the valley and lands higher up the opposite side, and the loss
+oscillates or explodes. Try $\eta = 1.0$ in the worked example above and watch it diverge
+(Exercise~\ref{ex:ch10:lr}). Every "the network diverged" story is this, or something
+downstream of it.
+\end{pitfall}
+
+\subsection{From a number to a probability}
+
+Chapter~\ref{ch:currency} argued that the output should be a probability. Our $f$ can return
+any real number, so we squash it with the logistic function built in §2.3:
+\[
+  p \;=\; \sigma\bigl(f(s)\bigr) \;=\; \frac{1}{1 + e^{-f(s)}} .
+\]
+The number $f(s)$ before the squash is called the \textbf{logit}: it lives on the log-odds
+scale, where adding is meaningful, and $\sigma$ converts it to a probability.
+
+With a probability output, squared error is the wrong loss --- it is nearly flat when the
+model is confidently wrong, which is exactly when you want a strong gradient. The right one
+is \textbf{cross-entropy}:
+\begin{equation}
+  \label{eq:crossent}
+  L \;=\; -\bigl[\,y\ln p \;+\; (1-y)\ln(1-p)\,\bigr] .
+\end{equation}
+If the truth is $y=1$ and you predicted $p = 0.99$, the loss is $-\ln 0.99 = 0.01$. If you
+predicted $p = 0.01$, it is $-\ln 0.01 = 4.6$. Confident and wrong is punished savagely,
+which is the behaviour you want from anything that will later be asked "how sure are you?"
+
+\begin{keyidea}
+Cross-entropy has a beautiful property that will matter in Chapter~\ref{ch:heads}: combined
+with the logistic (or softmax) output, its gradient reduces to $(p - y)\phi$ --- literally
+\emph{predicted minus actual, times the feature}. The same shape as the linear case. All the
+messy calculus cancels.
+\end{keyidea}
+
+\section{Where a linear formula hits a wall}
+
+Learning the weights fixed the tuning problem. It did not fix the second failure from
+Chapter~\ref{ch:problem}: a sum of terms cannot express \emph{it depends}. Let us prove that
+with a chess example precise enough to be provable.
+
+\subsection{A property no linear formula can compute}
+
+Take two binary features of a position:
+\[
+  \phi_1 = \begin{cases}1 & \text{White castled kingside}\\ 0 & \text{queenside}\end{cases}
+  \qquad
+  \phi_2 = \begin{cases}1 & \text{Black castled kingside}\\ 0 & \text{queenside}\end{cases}
+\]
+and ask for a feature every player knows: \textbf{is this an opposite-side-castling
+position?} --- the classic marker of a sharp, mutual-attack game.
+
+\begin{center}
+\begin{tabular}{@{}ccl@{}}
+\toprule
+$\phi_1$ & $\phi_2$ & target: opposite sides? \\
+\midrule
+1 & 1 & 0 (both kingside --- same side) \\
+1 & 0 & 1 (\textbf{opposite}) \\
+0 & 1 & 1 (\textbf{opposite}) \\
+0 & 0 & 0 (both queenside --- same side) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{established}
+\textbf{No linear formula $w_1\phi_1 + w_2\phi_2 + b$ can produce this pattern.}
+
+\smallskip
+\emph{Proof.} Suppose it did, with "produces 1" meaning the output is positive and "produces
+0" meaning it is not. The four rows require
+\[
+\text{(i) } b \le 0,\quad
+\text{(ii) } w_1 + b > 0,\quad
+\text{(iii) } w_2 + b > 0,\quad
+\text{(iv) } w_1 + w_2 + b \le 0 .
+\]
+Add (ii) and (iii): $w_1 + w_2 + 2b > 0$, so $w_1 + w_2 > -2b$. From (iv),
+$w_1 + w_2 \le -b$. Combining: $-b > -2b$, hence $b > 0$ --- contradicting (i). $\blacksquare$
+\end{established}
+
+This is the classic XOR argument, and it is not a curiosity: \textbf{"it depends" is XOR}.
+Every piece of chess knowledge of the form \emph{this is good, unless that, in which case it
+is bad} has this shape, and a weighted sum of features is structurally incapable of holding
+it. You cannot fix it by tuning harder. You cannot fix it with more data. The form of the
+equation is wrong.
+
+Classical engines coped by hand-coding the interaction as a new feature --- literally adding
+$\phi_3 = $ "opposite-side castling" with its own weight. That works exactly once per
+interaction somebody thinks of, and there are more interactions in chess than there are
+chess programmers.
+
+\subsection{The repair: one hidden layer}
+
+Instead of going straight from features to output, go through an intermediate stage of
+\emph{learned} quantities, with a non-linearity in between. The non-linearity of choice is
+the simplest one imaginable:
+\begin{equation}
+  \label{eq:relu}
+  \relu(z) \;=\; \max(0, z) \qquad \text{"negative becomes zero, positive passes through".}
+\end{equation}
+
+Now build the thing that was just proved impossible.
+
+\begin{worked}{a two-neuron network that computes ``opposite-side castling''}
+Hidden units:
+\[
+  h_1 = \relu(\phi_1 + \phi_2 - 0), \qquad h_2 = \relu(\phi_1 + \phi_2 - 1),
+\]
+output:
+\[
+  f = h_1 - 2h_2 .
+\]
+Evaluate all four cases:
+\begin{center}
+\begin{tabular}{@{}ccrrrl@{}}
+\toprule
+$\phi_1$ & $\phi_2$ & $h_1$ & $h_2$ & $f = h_1 - 2h_2$ & target \\
+\midrule
+0 & 0 & $\relu(0)=0$ & $\relu(-1)=0$ & $0$ & 0 \checkmark \\
+1 & 0 & $\relu(1)=1$ & $\relu(0)=0$  & $1$ & 1 \checkmark \\
+0 & 1 & $\relu(1)=1$ & $\relu(0)=0$  & $1$ & 1 \checkmark \\
+1 & 1 & $\relu(2)=2$ & $\relu(1)=1$  & $2 - 2 = 0$ & 0 \checkmark \\
+\bottomrule
+\end{tabular}
+\end{center}
+Four for four. Two neurons and a $\max(0,\cdot)$ have expressed a piece of chess knowledge
+that no weighted sum of the same two features can express.
+\end{worked}
+
+Look at what the hidden units became. $h_1$ fires when \emph{at least one} king went kingside;
+$h_2$ fires only when \emph{both} did. Neither was asked for. They are \textbf{learned
+features} --- intermediate concepts invented because they were useful for the final answer.
+That is the whole idea of a hidden layer, and everything Part~\textsc{v} tries to read out of
+Leela's middle layers is a much larger version of exactly this.
+
+\begin{keyidea}
+\textbf{A network is a stack of the Chapter~\ref{ch:problem} formula.} Each layer computes a
+weighted sum of the layer below and squashes it:
+\[
+  \vv{x}^{(l)} = \relu\bigl(W^{(l)}\vv{x}^{(l-1)} + \vv{b}^{(l)}\bigr).
+\]
+The first layer's inputs are the raw board; the last layer's output is the evaluation; and
+every layer in between is a set of features that the training process found worth having. The
+$\relu$ is what makes stacking worthwhile --- without it, a stack of linear maps collapses
+into a single linear map (Exercise~\ref{ex:ch10:collapse}), and we are back where we started.
+\end{keyidea}
+
+\section{A forward pass, by hand}
+
+Here is a complete miniature network, so the words above have arithmetic under them.
+
+\begin{worked}{one forward pass}
+Two inputs, two hidden units, one output. \emph{(Illustrative weights.)}
+\[
+W^{(1)} = \begin{pmatrix} 0.5 & -1.0 \\ 2.0 & 0.5\end{pmatrix},\quad
+\vv{b}^{(1)} = \begin{pmatrix} 0.1 \\ -0.4 \end{pmatrix},\quad
+W^{(2)} = \begin{pmatrix} 1.5 & -0.8\end{pmatrix},\quad b^{(2)} = 0.2 .
+\]
+Input $\vv{x} = (1.0,\ 0.6)$.
+
+\smallskip
+\textbf{Hidden pre-activations:}
+\[
+z_1 = 0.5(1.0) + (-1.0)(0.6) + 0.1 = 0.5 - 0.6 + 0.1 = 0.0,
+\]
+\[
+z_2 = 2.0(1.0) + 0.5(0.6) - 0.4 = 2.0 + 0.3 - 0.4 = 1.9 .
+\]
+\textbf{After ReLU:} $h_1 = \max(0, 0.0) = 0.0$, $h_2 = \max(0, 1.9) = 1.9$.
+
+\smallskip
+\textbf{Output logit:} $f = 1.5(0.0) + (-0.8)(1.9) + 0.2 = -1.52 + 0.2 = -1.32$.
+
+\smallskip
+\textbf{As a probability:} $\sigma(-1.32) = \dfrac{1}{1+e^{1.32}} = \dfrac{1}{1+3.743} = 0.211$.
+
+\smallskip
+So this network says: expected score $0.211$, i.e.\ $V = 2(0.211) - 1 = -0.578$. Note that
+$h_1$ contributed nothing --- its input landed exactly at the ReLU's kink. That is normal:
+in a large network most units are silent for any given input, and \emph{which} units are
+silent is itself information about the position. Chapter~\ref{ch:probes} is about reading it.
+\end{worked}
+
+\section{Training, in one page}
+
+The remaining machinery, stated rather than derived, because you will not need to implement
+it:
+
+\begin{enumerate}
+\item \textbf{Backpropagation} is gradient descent applied to a stack. To know how a weight in
+  layer 3 affects the loss, you multiply together the effect of layer 3 on layer 4, layer 4 on
+  layer 5, and so on --- the chain rule. Doing this efficiently, once, for all weights, is
+  backpropagation. It is bookkeeping, not a new idea.
+\item \textbf{Batches.} Computing the gradient over millions of positions per step is
+  wasteful; use a random few hundred each step. The gradient is then noisy, which turns out to
+  help.
+\item \textbf{Initialisation} matters: all-zero weights make every unit identical forever, so
+  weights start random and small.
+\item \textbf{The loss usually has several terms.} Leela's has three (Chapter~\ref{ch:heads}):
+  one for the value head, one for the policy head, one for the moves-left head, plus a
+  regularisation term that discourages large weights.
+\end{enumerate}
+
+\begin{established}
+Two things worth knowing about what training does and does not guarantee. It finds a
+\emph{local} minimum, not the best possible network --- in practice, for large networks, this
+matters far less than intuition suggests. And it optimises the loss on the training data,
+which is only useful insofar as that data resembles what the network will meet later. Leela's
+training data is its own games, which is why its policy models \emph{Leela's} choices rather
+than a human's --- a fact with direct consequences for how you read a policy prior in a
+training tool for humans.
+\end{established}
+
+\begin{repobox}[title={in this repository}]
+You never train the main network here --- \texttt{engine/*.pb.gz} are downloaded, trained by
+the Leela project on thousands of GPUs. But you \emph{will} train small models: a linear
+probe is exactly the model of §10.2 (Chapter~\ref{ch:probes}), and the salience ranker that
+learns which board facts a master would mention is a slightly larger one
+(Chapter~\ref{ch:speak}). Everything in this chapter applies to them directly.
+\end{repobox}
+
+\begin{exercises}
+
+\exhead[one more step]{ch10:onestep} Continue the worked example of §10.2.2 for a third and
+fourth step of gradient descent. Does the slope keep shrinking? Sketch $w_1$ against step
+number.
+
+\exhead[the exact answer]{ch10:exact} For a one-feature linear model with squared loss, the
+minimiser is $w_1 = \sum_m \phi_m y_m / \sum_m \phi_m^2$. Compute it for the three positions
+in the example and check the claimed $5/14$. How many gradient steps of §10.2.2 are needed to
+get within $0.05$ of it? Why does gradient descent approach the answer ever more slowly?
+
+\exhead[learning rate]{ch10:lr} Redo two steps of the same example with $\eta = 1.0$. What
+happens to $w_1$? Now try $\eta = 0.3$. Describe the three regimes (too small, about right,
+too large) in one sentence each.
+
+\exhead[blame assignment]{ch10:blame} The gradient is (error) $\times$ (feature). Explain why
+a feature that is zero in a position receives no update from it, and why that is the right
+behaviour. What does this imply for a feature that is almost always zero?
+
+\exhead[cross-entropy]{ch10:crossent} Compute the cross-entropy loss for $y = 1$ with
+$p = 0.9, 0.5, 0.1, 0.01$. Plot roughly. Compare with the squared errors for the same four.
+Which loss cares more about confident mistakes, and by how much at $p = 0.01$?
+
+\exhead[the XOR proof]{ch10:xorproof} Reproduce the impossibility proof of §10.3.1 without
+looking. Then find another chess property with the same logical shape (good, \emph{unless}),
+and state it as a truth table over two binary features.
+
+\exhead[build the network]{ch10:buildxor} Verify the two-neuron network of §10.3.2 on all four
+inputs yourself. Then modify it so it outputs $+1$ for same-side castling and $0$ for
+opposite --- changing as few numbers as possible.
+
+\exhead[why non-linearity]{ch10:collapse} Show that two linear layers without a ReLU collapse
+to one: if $\vv{y} = W_2(W_1\vv{x} + \vv{b}_1) + \vv{b}_2$, find the single $W$ and $\vv{b}$
+with $\vv{y} = W\vv{x} + \vv{b}$. What does this say about the value of depth without
+non-linearity?
+
+\exhead[forward pass]{ch10:forward} Run the network of §10.4 on the input $\vv{x} = (0.2,
+-1.0)$. Give $z_1, z_2, h_1, h_2$, the logit, the probability and $V$. Which hidden unit is
+silent this time?
+
+\exhead[counting parameters]{ch10:params} A layer mapping 768 numbers to 768 numbers has how
+many weights (ignore biases)? Leela's BT3 has 15 such layers plus attention machinery.
+Estimate the parameter count to within a factor of two, and compare with the three weights
+you fitted by hand in §10.2.2.
+
+\exhead[what the target really is]{ch10:target} Leela's value target is the result of its own
+self-play game, not a human game. Give one way this makes the network stronger and one way it
+makes its policy a slightly wrong model of \emph{your} chess --- and say which chapter's
+metric is affected by the latter.
+
+\end{exercises}

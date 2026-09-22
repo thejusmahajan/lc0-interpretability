@@ -1,0 +1,329 @@
+\chapter{The two heads, and the loop that trains them}
+\label{ch:heads}
+
+\begin{objectives}
+\begin{itemize}
+\item Describe how a $64\times768$ block of numbers becomes a probability over $\sim\!1858$
+  moves and a win/draw/loss triple.
+\item Verify, on real output, that the policy is a proper distribution over legal moves.
+\item Explain how the same network can be right in one head and wrong in the other about the
+  same move --- with a real example.
+\item State the self-play training loop as three equations and explain why it improves.
+\item Say precisely whose chess the policy head models, and what follows for a human training
+  tool.
+\end{itemize}
+\end{objectives}
+
+\section{Two questions, one body}
+
+Chapter~\ref{ch:problem} said every engine must answer two questions: how good is this, and
+where should I look? Leela answers both with one network and two small \emph{heads} attached
+to the top of it.
+
+\begin{center}
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=2pt, minimum height=7mm, align=center, font=\small},
+  arr/.style={-{Latex[length=2mm]}, thick}]
+\node[box, fill=black!4, text width=32mm] (in) at (0,0) {board $+$ history\\\footnotesize $64\times768$};
+\node[box, fill=BuildBlue!12, text width=38mm, minimum height=16mm] (body) at (4.4,0)
+  {\textbf{15 encoder layers}\\\footnotesize attention + feed-forward};
+\node[box, fill=IdeaGreen!12, text width=34mm] (pol) at (9.4,0.95)
+  {\textbf{policy head}\\\footnotesize $P(a\given s)$, $\sim$1858 slots};
+\node[box, fill=DataTeal!12, text width=34mm] (val) at (9.4,-0.35)
+  {\textbf{value head}\\\footnotesize $(w, d, l)$};
+\node[box, fill=black!4, text width=34mm] (mlh) at (9.4,-1.6)
+  {\footnotesize moves-left head: $M$};
+\draw[arr] (in) -- (body);
+\draw[arr] (body.east) -- (pol.west);
+\draw[arr] (body.east) -- (val.west);
+\draw[arr] (body.east) -- (mlh.west);
+\end{tikzpicture}
+\end{center}
+
+Everything below the heads is shared. That is not a saving; it is the point. The
+representation that lets you say "White is winning" is largely the representation that lets
+you say "and the move is Qb8+", so the two tasks teach each other. This is called multi-task
+learning, and in AlphaZero-style training it is essential rather than incidental.
+
+\section{The policy head}
+
+\subsection{Naming a move with a number}
+
+A probability distribution needs a fixed set of outcomes, so every possible chess move needs
+its own slot. Leela uses a fixed vocabulary of \textbf{1858} move slots, covering every
+(from-square, to-square) pair that any piece could ever traverse, plus underpromotions.
+
+Most are illegal in any given position. So the head produces a raw score --- a
+\textbf{logit} --- for all 1858, and then:
+\begin{enumerate}
+\item set the logits of illegal moves to $-\infty$;
+\item softmax over what remains.
+\end{enumerate}
+\begin{equation}
+  \label{eq:policyhead}
+  P(a \given s) \;=\;
+  \frac{\exp\bigl(z_a\bigr)}{\sum_{b \in \mathcal{A}(s)}\exp\bigl(z_b\bigr)},
+  \qquad z = \text{(linear map of }X^{(15)}).
+\end{equation}
+The masking matters: the network is never asked to learn the rules of chess, only which legal
+move to prefer. This is why the priors you saw in Chapter~\ref{ch:puct} always add up:
+
+\begin{realdata}[title={Real engine output: the priors are a proper distribution}]
+Summing the reported $P$ over all legal moves in each position of this book's data set:
+\begin{center}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Position & legal moves & $\sum_a P(a\given s)$ \\
+\midrule
+Initial position & 20 & $100.00\%$ \\
+K+P endgame & 4 & $100.00\%$ \\
+Drawn opposition ending & 5 & $99.99\%$ \\
+Morphy, before 16.Qb8+ & 46 & $100.00\%$ \\
+Morphy, before 12.O-O-O & 49 & $99.96\%$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+The shortfalls are rounding in the printed two-decimal percentages, not a modelling gap. Note
+also that every legal move appears with a non-zero prior --- there is no hard filter anywhere
+(Chapter~\ref{ch:puct}, Attempt 1).
+\end{realdata}
+
+\subsection{What the policy is a model of}
+
+Read Equation~\eqref{eq:policyhead} together with what the training target will turn out to be
+(§12.4) and you get a statement that is easy to misremember:
+
+\begin{keyidea}
+The policy head predicts \textbf{which move a full search by this same engine would end up
+preferring}. It is a fast approximation of its own slow self. It is \emph{not} a model of
+human choice, \emph{not} a goodness score, and \emph{not} calibrated to any rating band.
+\end{keyidea}
+
+That has a direct consequence for your project which is worth stating plainly, because it
+cuts against the natural reading of a "policy blindness" metric. When your tool says "you
+played a move Leela's instinct rated at $0.4\%$", the honest gloss is \emph{"a move this
+engine would rarely choose"}, not \emph{"a move a strong human would rarely choose"}. Those
+overlap heavily --- the network is very strong, and strong play is strong play --- but they
+are not the same claim, and the gap is largest precisely in the sharp, unusual positions the
+project cares about most.
+
+\section{The value head}
+
+The value head is smaller: a couple of linear layers, then a three-way softmax:
+\begin{equation}
+  \label{eq:valuehead}
+  (w, d, l) \;=\; \softmax\bigl(W_2\,\relu(W_1 \bar{\vv{x}} + \vv{b}_1) + \vv{b}_2\bigr),
+  \qquad V = w - l ,
+\end{equation}
+where $\bar{\vv{x}}$ is a pooled summary of the 64 square-vectors. Three outputs, softmaxed,
+so they are non-negative and sum to one --- exactly the WDL triple of
+Chapter~\ref{ch:currency}.
+
+Older networks emitted a single scalar $V$ instead. Splitting it into three was a real gain,
+and not only for display: it lets the network express \emph{how} it expects a position to
+finish, and it makes contempt and draw-avoidance expressible at search time without
+retraining.
+
+\subsection{The moves-left head}
+
+A third head predicts the number of plies remaining, the \texttt{M} column you have been
+ignoring:
+
+\begin{realdata}[title={Real engine output: the moves-left head}]
+\begin{center}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+Position & $M$ (plies) & \\
+\midrule
+Initial position & $168.0$ & about 84 moves --- a full game \\
+Morphy, before 12.O-O-O & $71.0$ & \\
+Morphy, before 16.Qb8+ & $86.6$ & the net does not see the mate \\
+K+P endgame (won) & $22.5$ & \\
+Drawn opposition ending & $19.2$ & \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{realdata}
+
+Its purpose is practical: among equally winning moves, prefer the one that finishes sooner
+(and among lost ones, the one that drags on). Without it, an engine in a won position happily
+shuffles, because every shuffle is also winning. It is a small head with an outsized effect
+on whether an engine's play looks purposeful.
+
+Notice the third row: in a position with mate in two, the moves-left head predicts $86.6$
+plies. The network does not see the mate --- consistent with its $V$ of $+0.62$
+(Chapter~\ref{ch:currency}) and its $1.6\%$ policy for the mating move. All three heads agree
+in their blindness, and search corrected all three at once.
+
+\section{One network, two opinions: how the heads disagree}
+
+The heads share a body but have separate output layers and separate training targets, so they
+can disagree. Chapter~\ref{ch:byhand} contains a clean example:
+
+\begin{realdata}[title={Real engine output: the value head knows what the policy head does not}]
+K+P endgame, the two moves that throw away the win:
+\begin{center}
+\begin{tabular}{@{}lrrrl@{}}
+\toprule
+Move & $P$ (policy) & $V$ of the resulting position & $d$ & Stockfish d30 \\
+\midrule
+Kd5 & $5.26\%$ & $0.000$ & $1.000$ & $0.00$ (draw) \\
+Kf5 & $5.38\%$ & $0.000$ & $0.999$ & $0.00$ (draw) \\
+\bottomrule
+\end{tabular}
+\end{center}
+The value head is certain --- draw probability $1.000$, evaluation exactly zero, and Stockfish
+agrees. The policy head still assigns these moves a tenth of its attention.
+\end{realdata}
+
+Why? Because they are answering different questions. The value head is asked \emph{how does
+this position finish}, and a king-and-pawn structure with the defender holding the opposition
+is a shape it has seen a hundred million times. The policy head is asked \emph{which move
+would search choose}, at a moment when it has not looked at any resulting position at all ---
+it must judge Kd5 without evaluating what Kd5 leads to.
+
+\begin{keyidea}
+\textbf{The policy sees the move; the value sees the consequence.} A single visit is exactly
+the operation that lets the second inform the first --- which is why in
+Chapter~\ref{ch:byhand} two visits out of 800 were enough to eliminate both errors. And it is
+why, in the position where \emph{both} heads are wrong (the Morphy mate), the correction took
+188 nodes instead of 2.
+\end{keyidea}
+
+\section{The training loop}
+
+Now the part that makes the whole thing self-improving. Leela learns from games it plays
+against itself, with no human games and no human evaluations.
+
+\subsection{Where the training targets come from}
+
+Play a self-play game. At every position $s_t$:
+
+\begin{itemize}
+\item run a search of a few hundred nodes;
+\item record the \textbf{visit distribution} $\pi_t(a) = N(s_t,a)/N(s_t)$ ---
+  Chapter~\ref{ch:engineering}'s Equation~\eqref{eq:temperature} with $\tau = 1$;
+\item play a move sampled from $\pi_t$;
+\item at the end of the game, record the result $z \in \{+1, 0, -1\}$ from each position's
+  point of view.
+\end{itemize}
+
+Then train the network to make its raw outputs match:
+\begin{equation}
+  \label{eq:azloss}
+  L \;=\;
+  \underbrace{-\sum_a \pi_t(a)\ln P(a\given s_t)}_{\text{policy: cross-entropy against the visits}}
+  \;+\;
+  \underbrace{\bigl(V(s_t) - z\bigr)^2}_{\text{value: match the result}}
+  \;+\;
+  \underbrace{\lambda\lVert\theta\rVert^2}_{\text{regularisation}} .
+\end{equation}
+
+\subsection{Why this improves anything}
+
+This is the part that looks circular and is not. The key observation:
+
+\begin{established}
+\textbf{Search is a policy improvement operator.} The visit distribution $\pi$ produced by a
+search of $N$ nodes is a \emph{better} policy than the raw $P$ that guided it --- because $\pi$
+is $P$ reshaped by actual evaluations of actual resulting positions
+(Chapter~\ref{ch:puct} §6.3: visits reproduce the prior only when search learns nothing).
+Training $P$ towards $\pi$ therefore moves the network towards a policy it did not previously
+have. The improved $P$ then makes the next search better, which makes the next $\pi$ better
+still.
+\end{established}
+
+You have already seen this operator at work, with numbers. In the initial position the raw
+policy said e4 $22.2\%$; after 1600 nodes the visits said $35.7\%$. The training target for
+that position would be $35.7\%$ --- and a network trained on many such examples drifts towards
+the opinion its own search keeps arriving at. In the K+P ending the policy said $10.6\%$ for
+the two drawing moves; the visits said $0.4\%$. Feed that back and the policy stops liking
+them.
+
+\begin{keyidea}
+\textbf{The loop is: intuition guides calculation; calculation corrects intuition.} That is
+not merely a nice description of AlphaZero --- it is a fair description of what a chess player
+does over years, and it is exactly what your project is trying to do for a human. Your
+"intuition drill" (guess Leela's top policy move) is the human-facing version of
+Equation~\eqref{eq:azloss}: it exposes where the student's $P$ differs from a good $\pi$.
+\end{keyidea}
+
+\subsection{Honest caveats}
+
+\begin{researchfinding}
+The AlphaZero result (Silver et al., 2017--18) is real and reproduced many times, including by
+the Leela project in the open. But note the conditions: the loop needs an enormous number of
+self-play games to work, the improvement is not monotone game-by-game, and the exploration
+noise of Chapter~\ref{ch:engineering} §8.5 is not optional --- without it the loop can
+converge to a confident, narrow, and beatable policy. "Self-improvement" is a property of the
+whole system at scale, not a magic property of the loss function.
+\end{researchfinding}
+
+\begin{pitfall}
+A network trained on its own games is calibrated to \emph{its own} opponent distribution. That
+is why the win probabilities of Chapter~\ref{ch:currency} are win probabilities \emph{between
+two copies of Leela at the search depth used in training} --- not between two humans, and not
+between you and your Saturday opponent. Any tool that shows a user "you had a $71\%$ win
+probability here" is quietly changing the subject unless it says whose.
+\end{pitfall}
+
+\begin{repobox}[title={in this repository}]
+Both heads are already extracted here: policy drives the arrows and the policy-blindness
+metric; WDL drives the evaluation display and the "character of the fight". The moves-left
+head appears to be unused --- it is free information, already computed on every evaluation,
+and it is the natural signal for "is this position resolving or drifting?", which is a
+question the drill scheduler asks in other ways.
+\end{repobox}
+
+\begin{exercises}
+
+\exhead[the move vocabulary]{ch12:vocab} Why does the policy head have a fixed 1858 slots
+rather than one output per legal move? Give a concrete reason connected to how a neural
+network's output layer is built.
+
+\exhead[masking]{ch12:masking} What would happen if illegal moves were \emph{not} masked
+before the softmax --- to the probabilities, and to the search? Would the network learn
+legality on its own? Should it have to?
+
+\exhead[softmax over legal moves]{ch12:softmaxlegal} In a position with 46 legal moves, the
+top prior is $31.93\%$. If the raw logit of that move were 1.0 higher, what would its
+probability become, holding other logits fixed? (Hint: work with the ratio of exponentials;
+assume the rest sums to $0.6807$ before renormalising.)
+
+\exhead[disagreement]{ch12:disagree} Explain, in your own words and in three sentences, how
+the same network gives Kd5 a $5.26\%$ prior while evaluating the position it reaches at
+exactly $0.000$ with $d = 1.000$. Then say which of the two you would trust more, and why.
+
+\exhead[moves left]{ch12:mlh} The moves-left head predicts $86.6$ plies in a position with
+mate in two. Is this a failure of the head or a failure of something else? What would the
+number become after search, and why?
+
+\exhead[the training target]{ch12:target2} In the initial position, raw $P(\text{e4}) = 22.2\%$
+and $\pi(\text{e4}) = 35.7\%$. Which is the training target for which? Write the direction of
+the update in one sentence, and say what the network's policy for e4 would drift towards after
+many such examples.
+
+\exhead[why it is not circular]{ch12:notcircular} A sceptic says: "the network trains on its
+own opinion, so it can only reinforce its errors." Answer in one paragraph, using the phrase
+\emph{policy improvement operator} and referring to a specific number from
+Chapter~\ref{ch:byhand}.
+
+\exhead[the role of noise]{ch12:noiserole} Using Chapter~\ref{ch:engineering}'s
+Equation~\eqref{eq:dirichlet}, explain what would go wrong in the training loop with no
+Dirichlet noise at all. Connect your answer to the greedy failure of
+Chapter~\ref{ch:manymachines} §4.2.
+
+\exhead[whose chess?]{ch12:whosechess} Write two versions of a tooltip for the
+policy-blindness metric: one that is precisely true, and one that is what most users would
+assume it means. How far apart are they? In which kind of position do they diverge most?
+
+\exhead[a use for M]{ch12:usem} Propose one concrete feature for your training tool that uses
+the moves-left head, and one way that feature could mislead a user. Say how you would test it
+before shipping.
+
+\exhead[the loop, for humans]{ch12:humanloop} Equation~\eqref{eq:azloss} has two terms: match
+the search's move preferences, and match the outcome. Describe the human training exercise
+that corresponds to each term. Which of the two does your project's drill system currently do
+better, and what would the other look like?
+
+\end{exercises}

@@ -1,0 +1,15 @@
+% fig_c_iter3.tex -- S-bar strip before Iteration 3 pick
+\begin{tikzpicture}
+  \node[anchor=west, font=\scriptsize\itshape, text=WorkGrey] at (-5.5, 4.0) {%
+    Scores compared BEFORE Iteration 3 pick ($S = Q + U$):%
+  };
+  \vgsbaraxis{-5.5}{5.5}{1.8}
+  \vgsbarS{-4.125}{0.96766}{0.55696}{Kd6}{meas}
+  \vgsbarS{-1.375}{0.98598}{0.54585}{Kf6}{sel}
+  \vgsbarS{1.375}{0.66460}{0.13279}{Kf5}{fpu}
+  \vgsbarS{4.125}{0.66460}{0.12983}{Kd5}{fpu}
+
+  \node[draw=GoldPath, fill=GoldPath!10, rounded corners=2pt, font=\tiny\bfseries, text=GoldPath] at (-1.375, 3.4) {%
+    \textbf{SELECTED: Kf6 (2nd time)} ($S=1.53183$)%
+  };
+\end{tikzpicture}

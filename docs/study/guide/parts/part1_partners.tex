@@ -1,0 +1,195 @@
+\chapter{The Two Partners}
+\label{ch:partners}
+
+The search engine operates as a partnership between two distinct components: the \textbf{Manager} (\texttt{lc0.exe}), which maintains tree bookkeeping and decision selection, and the \textbf{Artist} (the BT3 neural network), which evaluates positions in single forward passes.
+
+\section{The Handshake}
+
+\begin{established}[The Engine-Network Handshake]
+The interaction between manager and neural network proceeds step-by-step:
+\begin{center}
+\begin{minipage}{\linewidth}
+\captionsetup{type=figure}
+\centering
+\subcaptionbox{Manager holds board}{\input{figures/fig_1_1a.tex}}\qquad
+\subcaptionbox{Board slides to Artist}{\input{figures/fig_1_1b.tex}}\\[2ex]
+\subcaptionbox{Artist returns cards}{\input{figures/fig_1_1c.tex}}\qquad
+\subcaptionbox{Manager writes node}{\input{figures/fig_1_1d.tex}}
+\captionof{figure}{\textbf{FIG-1.1: The handshake cycle.} Manager passes board position to network; network returns policy prior probabilities and single-look WDL value evaluation (Equations~\eqref{eq:E1}--\eqref{eq:E2}).}
+\label{fig:1_1}
+\end{minipage}
+\end{center}
+\end{established}
+
+\section{The Problem the Search Has to Solve}
+\label{sec:1_2}
+
+
+\begin{established}[Three Essential Search Constraints]
+Before deriving any formula, we set the three requirements (R1--R3) that any MCTS selection rule must satisfy simultaneously:
+\begin{center}
+\input{figures/fig_1_7.tex}
+\captionof{figure}{\textbf{FIG-1.7: The problem the search has to solve.} Citing \texttt{ch06\_building\_puct.tex:L55--L64}. Requirements R1 (zero visits allowed), R2 (reachable later), and R3 (overrule prior) pull against each other. Witness: Morphy position after 15\dots Nxd7, where forced mate in 2 (\textbf{Qb8+}) gets only 1.60\% prior attention.}
+\label{fig:1_7}
+\end{center}
+\end{established}
+
+\section{Building the Selection Rule: Attempts 1--3}
+
+\begin{established}[Deriving PUCT: Attempts 1--3]
+We test candidate selection rules against requirements R1--R3:
+\begin{center}
+\begin{minipage}{\linewidth}
+\captionsetup{type=figure}
+\centering
+\subcaptionbox{1. Filter top $k$}[44mm]{\input{figures/fig_1_8a.tex}}\hfill
+\subcaptionbox{2. Add prior}[44mm]{\input{figures/fig_1_8b.tex}}\hfill
+\subcaptionbox{3. Prior $\cdot$ UCB1}[44mm]{\input{figures/fig_1_8c.tex}}
+\captionof{figure}{\textbf{FIG-1.8: Selection rule attempts 1--3.} Citing \texttt{ch06\_building\_puct.tex:L66--115}. (a) Attempt 1 (top-$k$ filter) fails R2. (b) Attempt 2 ($Q+cP$) fails R3 (prior never decays). (c) Attempt 3 (prior $\cdot$ UCB1) fails R1 ($\infty$ at $n=0$, modifying Equation~\eqref{eq:E7}).}
+\label{fig:1_8_part1}
+\end{minipage}
+\end{center}
+\end{established}
+
+\section{The Surviving Rule: Attempts 4--5 \& Final Formula}
+
+Fixing unvisited infinity leads to $\sqrt{N}$ growth and yields the **Predictor + Upper Confidence Bound applied to Trees (PUCT)** selection formula:
+
+\begin{equation}
+\label{eq:E10}
+\boxed{\;a^* \;=\; \argmax_{a} \left[\; Q(s,a) \;+\; c_{\text{puct}}(N) \cdot P(a \mid s) \cdot \frac{\sqrt{N(s)}}{1 + n_a} \;\right]\;}
+\end{equation}
+
+\begin{established}[Deriving PUCT: Attempts 4--5 and Final Form]
+\begin{center}
+\begin{minipage}{\linewidth}
+\captionsetup{type=figure}
+\centering
+\subcaptionbox{4. Finite at zero}{\input{figures/fig_1_8d.tex}}\qquad
+\subcaptionbox{5. $\sqrt{N}$ growth}{\input{figures/fig_1_8e.tex}}\\[2ex]
+\input{figures/fig_1_8_box.tex}
+\captionof{figure}{\textbf{FIG-1.9: Selection rule attempts 4--5 and final formula.} Citing \texttt{ch06\_building\_puct.tex:L116--149}. (a) Attempt 4 ($\sqrt{\ln N}$ growth) fails R2 in practice because neglected moves stay frozen. (b) Attempt 5 ($\sqrt{N}$ growth) survives R1--R3. Boxed: The complete PUCT selection formula (Equation~\eqref{eq:E10}).}
+\label{fig:1_8_part2}
+\end{minipage}
+\end{center}
+\end{established}
+
+\section{Reading the Finished Formula, Term by Term}
+
+Total score $S(a) = Q(a) + U(a)$ combines exploitation $Q(a)$ and exploration $U(a)$. Unvisited nodes inherit an unvisited baseline floor $Q_{\text{FPU}}$:
+
+\begin{equation}
+\label{eq:E11}
+\boxed{\;Q_{\text{FPU}} \;=\; Q(\text{parent}) \;-\; c_{\text{fpu}}\sqrt{\sum_{\text{visited}} P}\;}
+\end{equation}
+
+while the CPUCT exploration scaling parameter grows logarithmically with node visit count $N$:
+
+\begin{equation}
+\label{eq:E12}
+\boxed{\;c_{\text{puct}}(N) \;=\; c_{\text{base}} \;+\; c_{\text{factor}}\,\ln\left(\frac{N + c_{\text{mod}}}{c_{\text{mod}}}\right)\;}
+\end{equation}
+
+\begin{established}[Math Formula Overview]
+\begin{center}
+\input{figures/fig_1_10.tex}
+\captionof{figure}{\textbf{FIG-1.10: Math formula overview diagram.} Total score $S(a) = Q(a) + U(a)$ defined by Equation~\eqref{eq:E10}. Exploitation $Q(a)$ (solid bar) uses Equation~\eqref{eq:E4} for visited moves and $Q_{\text{FPU}}$ (Equation~\eqref{eq:E11}) for unvisited moves. Exploration $U(a)$ scales with $c_{\text{puct}}(N)$ (Equation~\eqref{eq:E12}). Visiting a move increments $(1+n_a)$, shrinking $U(a)$ (see FIG-2.2).}
+\label{fig:1_10}
+\end{center}
+\end{established}
+
+\section{Term-by-Term Reasoning}
+
+\begin{established}[Term-by-Term Reasoning]
+The four core design questions behind the formula's terms:
+\begin{center}
+\begin{minipage}{\linewidth}
+\captionsetup{type=figure}
+\centering
+\subcaptionbox{Why $Q$ is an average}{\input{figures/fig_1_11a.tex}}\qquad
+\subcaptionbox{Why $U$ is built this way}{\input{figures/fig_1_11b.tex}}\\[2ex]
+\subcaptionbox{Why $S=Q+U$ is a sum}{\input{figures/fig_1_11c.tex}}\qquad
+\subcaptionbox{Why $c_{\mathrm{puct}}$ grows}{\input{figures/fig_1_11d.tex}}
+\captionof{figure}{\textbf{FIG-1.11: Term-by-term breakdown.} Citing \texttt{ch06\_building\_puct.tex:L150--273}. (a) $Q$ is evidence (Equation~\eqref{eq:E4}); unvisited moves inherit penalized $Q_{\text{FPU}}$ floor (Equation~\eqref{eq:E11}). (b) $P$, $\sqrt{N}$, and $(1+n_a)$ in Equation~\eqref{eq:E10} balance initial claim, search growth, and immediate decay. (c) $S$ is a priority score, not an evaluation; falling $S$ is 100\% $U$ decay. (d) $c_{\text{puct}}(N)$ (Equation~\eqref{eq:E12}) opens search during deep analysis.}
+\label{fig:1_11}
+\end{minipage}
+\end{center}
+\end{established}
+
+\section{Anatomy of a Tree Node}
+
+A search tree node stores these specific fields \textbf{because} the selection rule derived in §1.4 (Equation~\eqref{eq:E10}) needs them to evaluate candidate moves.
+
+\begin{established}[Search Tree Node Anatomy]
+Each node in the MCTS search tree stores both measured network feedback and running statistics:
+\begin{center}
+\input{figures/fig_1_2.tex}
+\captionof{figure}{\textbf{FIG-1.2: Node Anatomy.} Prior probability $P(a)$, visit count $n_a$, running average evaluation $Q(a)$ (Equation~\eqref{eq:E4}), single-pass value $V$ (Equation~\eqref{eq:E2}), curiosity bonus $U(a)$, and selection score $S(a) = Q(a) + U(a)$ (Equation~\eqref{eq:E10}).}
+\label{fig:1_2}
+\end{center}
+\end{established}
+
+\section{The Initial Network Evaluation}
+
+\begin{realdata}[Initial Position Assessment]
+For our subject endgame position (\texttt{4k3/8/4K3/4P3/8/8/8/8 w - - 0 1}), one single forward pass produces initial policy priors and win-draw-loss assessment:
+\begin{center}
+\begin{minipage}{\linewidth}
+\captionsetup{type=figure}
+\centering
+\subcaptionbox{Cards Face-Down}{\input{figures/fig_1_3a.tex}}\qquad
+\subcaptionbox{Evaluated Numbers}{\input{figures/fig_1_3b.tex}}
+\captionof{figure}{\textbf{FIG-1.3: Policy and WDL cards for K+P endgame.} The policy places 89.36\% of attention on winning moves (Kd6 45.13\%, Kf6 44.23\%), but still leaves 10.64\% on drawing moves (Kf5 5.38\%, Kd5 5.26\%). Initial root value $V = +0.97602$ (Equation~\eqref{eq:E2}), $d = 0.024$.}
+\label{fig:1_3}
+\end{minipage}
+\end{center}
+
+\begin{keyidea}
+The network policy is an informed initial instinct, not an unassailable oracle. $89.36\%$ of its attention went to winning moves, but $10.64\%$ remained on moves that throw away the win. The search exists to verify and refine this instinct.
+\end{keyidea}
+\end{realdata}
+
+\section{One Value Per Position, Not Per Move}
+
+\begin{pitfall}[title={Where People Go Wrong: One Value Per Position, Not Per Move}]
+A common misreading assumes the neural network outputs individual value evaluations for candidate moves:
+\begin{center}
+\begin{minipage}{\linewidth}
+\captionsetup{type=figure}
+\centering
+\subcaptionbox{The Misreading}{\input{figures/fig_1_4a.tex}}\qquad
+\subcaptionbox{What Actually Comes Back}{\input{figures/fig_1_4b.tex}}
+\captionof{figure}{\textbf{FIG-1.4: One value per position, not one per move.} (a) The network does not produce individual $V$ evaluations for candidate moves. (b) A forward pass returns exactly one $V(s)$ (Equation~\eqref{eq:E2}) for the current position, alongside policy prior probabilities $P(a \mid s)$ for legal moves. A move receives its own value only when expanded into a child position (see FIG-2.1).}
+\label{fig:1_4}
+\end{minipage}
+\end{center}
+\end{pitfall}
+
+\vspace{1ex}
+
+\begin{established}[What the Policy Actually Predicts]
+The policy prior distribution $P(a \mid s)$ is a fast neural approximation of search preference, not an objective move quality score:
+\begin{center}
+\input{figures/fig_1_5.tex}
+\captionof{figure}{\textbf{FIG-1.5: What the policy predicts.} Citing \texttt{ch12\_two\_heads.tex:L96}. Measured proofs: 10.64\% of root policy goes to losing blunders (FIG-4.3), while a forced mate in 2 receives only 1.60\% prior attention (FIG-5.3).}
+\label{fig:1_5}
+\end{center}
+\end{established}
+
+\section{The Four-Phase Iteration Loop}
+
+\begin{established}[The Four-Phase Loop]
+Every single search iteration follows a continuous four-phase loop (Selection $\rightarrow$ Expansion $\rightarrow$ Evaluation $\rightarrow$ Backpropagation):
+\begin{center}
+\begin{minipage}{\linewidth}
+\captionsetup{type=figure}
+\centering
+\subcaptionbox{1. Selection}{\input{figures/fig_1_6a.tex}}\qquad
+\subcaptionbox{2. Expansion}{\input{figures/fig_1_6b.tex}}\\[2ex]
+\subcaptionbox{3. Evaluation}{\input{figures/fig_1_6c.tex}}\qquad
+\subcaptionbox{4. Backpropagation}{\input{figures/fig_1_6d.tex}}
+\captionof{figure}{\textbf{FIG-1.6: The four-phase MCTS iteration cycle.} Citing \texttt{ch05\_machines\_to\_trees.tex}. Each search iteration executes four sequential steps: Selection (choosing $\max S = Q+U$ via Equation~\eqref{eq:E10}), Expansion (creating child node), Evaluation (single forward pass on leaf), and Backpropagation (updating $N$ and $Q$ via Equation~\eqref{eq:E4} and sign flip Equation~\eqref{eq:E8} along path back to root).}
+\label{fig:1_6}
+\end{minipage}
+\end{center}
+\end{established}

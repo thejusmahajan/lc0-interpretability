@@ -1,0 +1,183 @@
+\chapter*{How to use this book}
+\addcontentsline{toc}{chapter}{How to use this book}
+\markboth{How to use this book}{How to use this book}
+
+\section*{What this is}
+
+This is a tutor, not a summary. It teaches one thing: \textbf{how a neural chess engine
+thinks, from the ground up, in enough detail that you could rebuild it.} By the end you
+should be able to look at a line of Leela's verbose output --- something like
+\begin{quote}\small\ttfamily
+info string b3b8 (N: 214) (P: 3.11\%) (Q: 0.99871) (U: 0.04102)
+\end{quote}
+and read it the way you read a chess diagram: instantly, structurally, knowing what every
+number is, where it came from, what would change it, and what it would look like if it
+were lying to you.
+
+We get there by building. Nothing is asserted and left standing. Every formula in this book
+is constructed in front of you --- usually starting from a version that is \emph{wrong},
+watching it fail on a concrete example, and repairing exactly the part that failed. The
+famous PUCT formula that governs Leela's every decision,
+\[
+  \argmax_a\;\Big[\,\underbrace{Q(s,a)}_{\text{what I've measured}}
+  \;+\; \underbrace{c_{\text{puct}}\,P(a\given s)\,\frac{\sqrt{N(s)}}{1+N(s,a)}}_{\text{what I haven't checked yet}}\Big]
+\]
+is not introduced. It is \emph{assembled}, in Chapter~\ref{ch:puct}, out of five failed
+attempts, each of which teaches you what one symbol is for. If you skip to the end and
+read the formula, you have learned nothing. That is exactly the failure mode this book
+exists to fix.
+
+\section*{Who it is for}
+
+You. A strong club player (2100--2200) who directs an engine-based training project, who
+wants the theory properly rather than as a listicle, and who has been burned by
+plausible-sounding explanations that turned out to be hollow.
+
+\paragraph{Assumed:} chess to a strong club standard; secondary-school algebra (you can
+rearrange $y = mx + c$ and you are not frightened by a summation sign).
+
+\paragraph{Not assumed:} calculus, probability, linear algebra, machine learning, or
+programming. Every mathematical tool used is built here, in the order it is needed. Where
+calculus is genuinely required (once, for gradient descent, in Chapter~\ref{ch:learned}) it
+is developed from the idea of a slope on a hill, with numbers.
+
+\section*{The seven rules this book follows}
+
+\begin{enumerate}
+\item \textbf{Every formula is built, never dropped.} A formula arrives as version~0
+  (crude, obviously wrong), is broken on an example, and is repaired. You see the scar
+  tissue. That is the point: the final formula's strange parts --- why $\sqrt{N}$ and not
+  $N$, why $1+N(s,a)$ and not $N(s,a)$ --- are exactly the repairs.
+
+\item \textbf{Every idea gets arithmetic.} Not "the bonus decays"; instead, a table where
+  the bonus is $0.55$, then $0.28$, then $0.19$, and you can check the division yourself.
+  Understanding that survives contact with a real engine log is arithmetic-shaped.
+
+\item \textbf{The engine numbers in this book are real.} Every table labelled
+  \emph{Real engine output} was produced by running the actual \texttt{lc0.exe} and network
+  in \texttt{engine/} on this machine, by the script
+  \texttt{tools/collect\_engine\_data.py}. Nothing is typed from memory or imagination.
+  Where a number is invented for the sake of clean arithmetic, it says so in the same
+  breath. See "The honesty apparatus" below --- this matters more than it sounds.
+
+\item \textbf{Chess claims are verified by an engine, not asserted.} This book teaches
+  computer science, but it uses chess positions. Any chess claim ("this wins", "this
+  throws away the win") has been checked with Stockfish at depth 30 and the check is
+  reported. The author of the text is not a chess authority and does not pretend to be.
+
+\item \textbf{Exercises are part of the exposition, not decoration.} Some results are
+  \emph{only} developed in the exercises. Full solutions are in Appendix~\ref{app:solutions},
+  worked at the same level of detail as the text. Do them with a pen. The arithmetic is
+  deliberately small enough to do by hand.
+
+\item \textbf{Confidence is labelled.} Textbook mathematics, published research findings,
+  and this project's own untested hypotheses are three different things, and this book
+  never lets them wear the same clothes.
+
+\item \textbf{Everything lands somewhere in your repository.} Each chapter ends by pointing
+  at the file in \texttt{chess\_speak\_out\_loud} where the idea actually lives, or notes
+  honestly that it does not exist yet. Appendix~\ref{app:repomap} is the full map.
+\end{enumerate}
+
+\section*{The honesty apparatus}
+
+This project has been burned twice by fluent, plausible, fabricated content --- a
+"sacrifice" metric that never checked material, and a batch of invented master annotations.
+The doctrine that came out of it (\emph{a bad coach does more harm than no coach}) applies
+to a textbook at least as much as to a chess tutor. So claims in this book are colour-coded
+by how much weight they will bear:
+
+\begin{established}
+Mathematics or documented engine behaviour. True by proof or by reading the source. If
+this is wrong, the error is mine and it is a plain error.
+\end{established}
+
+\begin{researchfinding}
+A published experimental result from the interpretability literature. Real evidence, real
+peer scrutiny --- but obtained on a \emph{particular} network, with a particular method, and
+not automatically true of the exact net in \texttt{engine/}. Reproduce before relying on it.
+\end{researchfinding}
+
+\begin{hypothesis}
+An idea this project intends to build, which nobody has yet demonstrated works here. It
+may be excellent. It is not knowledge. Where a chapter proposes one, it also proposes the
+experiment that could kill it.
+\end{hypothesis}
+
+\begin{realdata}
+Numbers produced by running the engine in \texttt{engine/} while writing this book. The
+exact command line is in Appendix~\ref{app:enginedata}; re-run it and you should get the
+same table (the search is deterministic at fixed node counts with one thread).
+\end{realdata}
+
+\noindent And, for the fourth case:
+
+\begin{worked}{invented numbers, and why that is fine here}
+When the point is the \emph{arithmetic of the algorithm}, real numbers are often clumsy ---
+$P = 0.4413$ obscures the division you are meant to see. In those places this book uses
+round invented numbers and says so in the caption: \emph{illustrative, not engine output}.
+The rule is simple: invented numbers are allowed to demonstrate a \emph{mechanism}; they
+are never allowed to support a \emph{claim about chess or about Leela}.
+\end{worked}
+
+\section*{How to read it}
+
+The book has seven parts and a spine. The spine is Parts~\textsc{ii} and \textsc{iv}: the
+search (how the engine decides where to spend its thinking) and the network (how it forms
+an opinion in the first place). Everything else hangs off those.
+
+\begin{center}
+\begin{tikzpicture}[
+   node distance=6mm,
+   part/.style={draw, rounded corners=2pt, align=left, inner sep=5pt, font=\small,
+                text width=0.72\textwidth},
+   spine/.style={part, fill=BuildBlue!10, draw=BuildBlue},
+   other/.style={part, fill=black!3, draw=black!35}]
+\node[other] (p1) {\textbf{I. The problem} \hfill ch.\ 1--2\\
+  \footnotesize what must be computed at all; why probability, not centipawns};
+\node[spine, below=of p1] (p2) {\textbf{II. Searching by gambling well} \hfill ch.\ 3--7\\
+  \footnotesize slot machines $\to$ UCB1 $\to$ UCT $\to$ PUCT $\to$ a full search done by hand};
+\node[other, below=of p2] (p3) {\textbf{III. The search as it really runs} \hfill ch.\ 8--9\\
+  \footnotesize FPU, batching, noise, tree reuse; how to read a real tree};
+\node[spine, below=of p3] (p4) {\textbf{IV. The oracle} \hfill ch.\ 10--12\\
+  \footnotesize hand-made formula $\to$ learned formula $\to$ attention $\to$ the two heads};
+\node[other, below=of p4] (p5) {\textbf{V. Opening the skull} \hfill ch.\ 13--15\\
+  \footnotesize probes, attention maps, learned look-ahead and prior override};
+\node[other, below=of p5] (p6) {\textbf{VI. Bending the engine} \hfill ch.\ 16--17\\
+  \footnotesize style as an objective function; sharpness that is real};
+\node[other, below=of p6] (p7) {\textbf{VII. Making it speak} \hfill ch.\ 18--19\\
+  \footnotesize divergence, facts, salience; one position end to end};
+\draw[-{Latex[length=2mm]}, BuildBlue, thick] (p1) -- (p2);
+\draw[-{Latex[length=2mm]}, BuildBlue, thick] (p2) -- (p3);
+\draw[-{Latex[length=2mm]}, BuildBlue, thick] (p3) -- (p4);
+\draw[-{Latex[length=2mm]}, BuildBlue, thick] (p4) -- (p5);
+\draw[-{Latex[length=2mm]}, BuildBlue, thick] (p5) -- (p6);
+\draw[-{Latex[length=2mm]}, BuildBlue, thick] (p6) -- (p7);
+\end{tikzpicture}
+\end{center}
+
+\paragraph{Three ways through.}
+\begin{itemize}
+\item \textbf{Cover to cover} (the intended path). Parts build strictly on each other.
+  Chapter~\ref{ch:byhand} --- a complete search executed by hand with real priors --- is
+  the point where the first half either clicks or does not; do not pass it until it does.
+\item \textbf{Search first, network later.} Chapters 1--9 are self-contained if you accept
+  the network as a black box that returns two things. Many people find the search easier
+  and the network more mysterious; this order lets the mystery wait.
+\item \textbf{Reference.} Appendix~\ref{app:notation} is a one-page symbol table,
+  Appendix~\ref{app:glossary} a glossary, Appendix~\ref{app:repomap} the map from concept
+  to source file. Chapter~\ref{ch:readingtree} is the one to reread whenever you are
+  staring at a confusing engine log.
+\end{itemize}
+
+\paragraph{Pace.} There are 19 chapters and roughly 130 exercises. At one chapter per
+sitting this is about three weeks. The two long chapters (\ref{ch:byhand} and
+\ref{ch:attention}) are each worth two sittings on their own.
+
+\section*{A note on what this book will not do}
+
+It will not do chess analysis. When a position appears, its role is to make an algorithm
+concrete, and any evaluative statement about it is either (a) an engine output, quoted and
+attributed, or (b) elementary and flagged as such. The governing rule of the project it
+was written for --- \emph{the engine is the chess authority; language is a translator,
+never a reasoner} --- is also the rule this book obeys about itself.

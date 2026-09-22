@@ -1,0 +1,308 @@
+\chapter{Learned look-ahead and the priors that override it}
+\label{ch:lookahead}
+
+\begin{objectives}
+\begin{itemize}
+\item State what "learned look-ahead" claims, and what evidence has been offered for it.
+\item Separate what is published, what is architecture-specific, and what this project hopes
+  is true.
+\item Examine a real position in which all three of Leela's output heads miss a mate in two.
+\item Design the suppressed-win experiment properly: probe, controls, and the decisive test.
+\item Compute why base rates make a naive suppressed-win detector produce mostly false alarms
+  --- and what to do about it.
+\end{itemize}
+\end{objectives}
+
+\section{The claim}
+
+Everything in Part~\textsc{ii} assumed a clean division of labour: the network has intuition,
+the search does the calculating. Learned look-ahead is the claim that this division is not
+clean --- that \textbf{inside a single forward pass, with no search at all, the network's
+middle layers construct representations of positions several plies in the future, and use
+them}.
+
+If true it is a significant thing to know, and it is directly on this project's north star:
+it would mean the network's "thinking" contains more structure than its outputs reveal, and
+that structure is what a coaching tool would most want to translate.
+
+\begin{researchfinding}
+\textbf{Evidence of Learned Look-Ahead in a Chess-Playing Neural Network} (Jenner et al.,
+2024) studied a Leela chess network and reported, in summary:
+\begin{enumerate}
+\item \textbf{Future-state representation.} Activations in middle layers contain information
+  about board states several plies ahead; a linear probe recovered aspects of the optimal move
+  two turns ahead with accuracy reported up to around $92\%$.
+\item \textbf{Look-ahead attention heads.} Specific heads move information along the squares
+  of a future tactical sequence, rather than the current one.
+\item \textbf{Causal relevance.} Intervening on those activations changes the network's
+  immediate move choice --- so the representations are used, not decorative
+  (Chapter~\ref{ch:probes}, Trap 3, addressed).
+\end{enumerate}
+Point 3 is what makes this a strong result rather than a suggestive one.
+\end{researchfinding}
+
+\begin{pitfall}
+Three limits on how far that carries.
+
+\textbf{(a) It is one network.} The result was obtained on a particular Leela net. Your
+\texttt{BT3-768x15x24h} is a different, larger architecture. Interpretability findings are
+routinely architecture-specific; the finding is a reason to look, not a licence to assume.
+
+\textbf{(b) "Look-ahead" is a claim about representation, not about search.} The network is
+not running a tree. It has learned patterns that encode where pieces will be in common
+tactical shapes. That is impressive; it is not the same as calculating, and a tool that says
+"the network calculated this line" would be overclaiming.
+
+\textbf{(c) There is a citation to verify.} Your project's research note also lists a paper
+titled \emph{Learned Priors Override Look-Ahead in a Chess-Playing Neural Network}. I have not
+been able to verify that this is a published paper with that title, and this book will not
+treat it as one. The \emph{phenomenon} it names is separately plausible and partly observable
+in our own data (§15.2) --- but before that title is cited anywhere in this project's
+documents, someone should confirm it exists. Given this project's history with fabricated
+sources, treat an unverified citation as a bug.
+\end{pitfall}
+
+\section{A real position where every head is wrong}
+
+We do not have to speculate about whether Leela's outputs can miss a decisive tactic. We
+measured it in Chapter~\ref{ch:puct}, and it is worth assembling all the evidence in one
+place, because this position is the natural first test case for everything that follows.
+
+\begin{center}
+\chessboard[setfen=4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4 w k - 0 16,
+            boardfontsize=18pt]
+\end{center}
+
+\noindent Morphy--Duke of Brunswick \& Count Isouard, Paris 1858, before 16.Qb8+. White to
+move; 46 legal moves. Stockfish at depth 30: \textbf{16.Qb8+ Nxb8 17.Rd8\# --- mate in two.}
+
+\begin{realdata}[title={Real engine output: what the network says, with no search}]
+\begin{center}
+\begin{tabular}{@{}llr@{}}
+\toprule
+Head & Output & Reading \\
+\midrule
+Policy & $P(\text{Qb8+}) = 1.60\%$ & the mating move is not among the top few \\
+Policy & $P(\text{Qb7}) = 31.93\%$ & prefers a strong but non-forcing move \\
+Value  & $V = +0.62$, $d = 0.193$ & "clearly better", not "winning by force" \\
+Moves-left & $M = 86.6$ plies & expects the game to last another 43 moves \\
+\bottomrule
+\end{tabular}
+\end{center}
+All three heads are consistent with each other --- and all three are wrong about a position
+that ends in two moves. The search then found it, in 188 nodes, by the mechanism of
+Chapter~\ref{ch:puct} §6.5.
+\end{realdata}
+
+\begin{keyidea}
+This position is a clean, reproducible instance of the phenomenon the suppressed-win idea is
+about: \textbf{the output layer under-rates a forcing win that is objectively there}. What it
+does \emph{not} yet show is anything about the middle layers. Whether layer 8 "knew" is
+exactly the open question --- and it is answerable, on this position, with the machinery this
+project already has.
+\end{keyidea}
+
+\section{The experiment, designed properly}
+
+Here is the suppressed-win experiment written out so that it could fail.
+
+\subsection{The quantity}
+
+Train a probe (Chapter~\ref{ch:probes}) at layer $l$ to predict a property such as
+\emph{"there exists a forced win for the side to move within $k$ plies"}. Write its output
+$\hat{y}^{(l)}(s) \in [0,1]$. Define
+\begin{equation}
+  \label{eq:suppression}
+  \Delta_{\text{suppress}}(s) \;=\; \hat{y}^{(l)}(s) \;-\; \max_{a \in \mathcal{W}(s)} P(a\given s),
+\end{equation}
+where $\mathcal{W}(s)$ is the set of moves that actually achieve the win. Large positive
+$\Delta$ means: the middle layer indicates a win is available while the policy assigns little
+probability to any move that takes it.
+
+\subsection{The controls, without which the number is noise}
+
+\begin{enumerate}
+\item \textbf{Input baseline.} The identical probe on layer 0. If a linear function of the
+  raw board detects "a forced win exists" nearly as well, the middle layers have added nothing.
+\item \textbf{Untrained-network baseline.} The identical probe on a randomly initialised net.
+  This catches probes that are exploiting the geometry of the encoding rather than learned
+  content.
+\item \textbf{Label-shuffle control.} Retrain on shuffled labels; accuracy must collapse to the
+  base rate. If it does not, there is leakage --- most likely positions from the same game
+  appearing in both splits.
+\item \textbf{Causal test.} Ablate or patch the implicated activations and show the policy
+  changes. Without this you have shown correlation, and the whole claim is about a
+  \emph{disagreement} between two parts of the network, which correlation cannot establish.
+\item \textbf{Held-out re-test.} Whatever layer wins across the 15 candidates, re-measure it on
+  positions never used in the search (Chapter~\ref{ch:probes}, Trap 4).
+\end{enumerate}
+
+\subsection{The decisive test}
+
+Even with all five controls, one confound remains, and it is the one that would fool a careful
+person. A probe trained to detect "a forced win exists" may simply be detecting
+\textbf{tactical density} --- loose pieces, exposed king, forcing checks available --- which
+correlates with forced wins and is surely represented in a strong network. Such a probe would
+fire on many sharp positions with no win at all.
+
+\begin{keyidea}
+\textbf{The decisive test is matched pairs.} Construct pairs of positions that are as similar
+as possible --- same material, same structure, same tactical density --- in one of which the
+forcing win exists and in the other of which it does not (one defensive resource added, one
+tempo different). A probe reading a genuine look-ahead representation separates the pair. A
+probe reading "this looks tactical" does not. Report accuracy \emph{within pairs}; it is the
+only number that means what you want it to mean.
+\end{keyidea}
+
+\section{Base rates: why the naive detector fails as a feature}
+
+Suppose all of the above succeeds and you have a probe with genuinely good numbers. There is
+still an arithmetic obstacle between a working probe and a usable feature, and it is worth
+doing the sums before building anything.
+
+\begin{worked}{the false-alarm calculation}
+Suppose you scan positions where the policy's top move is not a decisive tactic, looking for
+suppressed wins. Assume, generously, that \textbf{1 in 500} such positions really does hide a
+low-policy forced win. Suppose the probe is good: it catches $90\%$ of the real cases (recall
+$0.9$) and fires on only $5\%$ of the rest (false-positive rate $0.05$).
+
+Out of 10{,}000 scanned positions:
+\begin{itemize}
+\item real suppressed wins: $10{,}000/500 = 20$. The probe catches $0.9 \times 20 = 18$.
+\item non-cases: $9{,}980$. The probe fires on $0.05 \times 9{,}980 = 499$.
+\end{itemize}
+So of $18 + 499 = 517$ alerts, $18$ are real:
+\[
+  \text{precision} \;=\; \frac{18}{517} \;=\; 3.5\% .
+\]
+\textbf{Thirty-five out of every thirty-six alerts would be wrong.} And each wrong alert is
+the tool telling you, with the full authority of "the engine's internals", that a brilliancy
+was available when it was not.
+\end{worked}
+
+\begin{keyidea}
+This is the base-rate problem, and it is not solved by improving the probe a little. To reach
+$50\%$ precision at a $1/500$ base rate you need a false-positive rate near $0.2\%$ --- a
+$25\times$ improvement, on a rare and subtle property. \textbf{The binding constraint on this
+feature is precision, not accuracy}, and any evaluation reported as "accuracy" is measuring
+the wrong thing.
+\end{keyidea}
+
+\subsection{What actually makes it feasible}
+
+The good news is that you do not have to run the probe on raw positions. You already have a
+cheap, reliable filter --- \emph{the search itself}:
+
+\begin{enumerate}
+\item Run a search. Identify positions where a move with low policy turns out best, or has a
+  proven value (Chapter~\ref{ch:readingtree}'s corrected gem criterion). This filter is
+  \textbf{verified}: the win is established by search and confirmable by Stockfish, so there
+  are no false positives about the chess.
+\item \emph{Then} ask the probe its question --- not "is there a win?" but "did the middle
+  layers represent it?"
+\end{enumerate}
+
+This reordering changes the product. The user-facing claim becomes:
+
+\begin{center}
+\begin{tabular}{@{}p{6.3cm}p{6.9cm}@{}}
+\toprule
+\textbf{Naive design} & \textbf{Filtered design} \\
+\midrule
+"The network's deeper layers saw a winning sacrifice here." & "Search found a winning move
+here that the network's instinct rated at $1.6\%$." \\
+\addlinespace
+Rests on the probe. Precision $3.5\%$. Unfalsifiable to the user. & Rests on the search.
+Precision $\approx 100\%$. Checkable. \\
+\addlinespace
+The probe is load-bearing. & The probe is a \emph{bonus} claim, added only when it is
+confident, and removable without breaking the feature. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{keyidea}
+\textbf{Put the verified thing in the load-bearing position and the speculative thing on
+top.} The training value to you --- here is a strong move your instinct would not have
+considered, now play it out --- comes entirely from the search-verified part. The
+interpretability claim adds a mechanism story, which is fascinating and should be presented as
+what it is. If the probe turns out not to work on BT3, the feature still ships.
+\end{keyidea}
+
+\section{What this means for the Tal work}
+
+Your project's interest here is not idle: the sacrificial, sharp chess you want to play
+\emph{is} the region where a policy trained on outcomes is most likely to be conservative, and
+the region where you personally report a specific fear --- not being able to foresee the
+position a sacrifice produces.
+
+Two things follow from this chapter.
+
+\begin{enumerate}
+\item \textbf{The search-verified version of this feature is available now.} Nothing in it
+  requires probes. Chapter~\ref{ch:readingtree} gives the detector, corrected for the
+  proven-value case; the Morphy position is a working example with real numbers; the drill is
+  to play the continuation out.
+\item \textbf{The interpretability version is a research project with a specific first
+  experiment.} Probe layer 8 of BT3 on matched pairs, with all five controls, and see whether
+  the pairs separate. On present evidence it is a good bet and an unproven one.
+\end{enumerate}
+
+\begin{hypothesis}
+To be explicit about the status of the central idea: \emph{that BT3's middle layers represent
+a winning tactic which its policy head then suppresses} is, in this project, an untested
+hypothesis. It is motivated by published work on a related network, and by a real observed
+failure of the output heads (§15.2). It has not been measured here. Everything above is the
+design of the measurement.
+\end{hypothesis}
+
+\begin{repobox}[title={in this repository}]
+The pieces exist: \texttt{backend/neural\_vision.py} for hooks, the corpus for positions,
+Stockfish for ground truth, and the collection scripts in this book's \texttt{tools/} for
+harvesting policy-versus-search divergences at scale. The missing piece is the labelled
+dataset of matched pairs --- which is a chess-generation problem, not a machine-learning one,
+and is the natural next task if this line is pursued.
+\end{repobox}
+
+\begin{exercises}
+
+\exhead[stating the claim]{ch15:claim} Write down, in one sentence each, the three findings of
+the published look-ahead work, and mark which of them requires a causal intervention to
+support.
+
+\exhead[architecture specificity]{ch15:arch} Give two concrete reasons a result obtained on
+one Leela network might not hold on BT3. What is the cheapest experiment that would check?
+
+\exhead[the position]{ch15:position} Using the real numbers in §15.2, write the three
+statements that are safe to make about this position and the one tempting statement that is
+not yet supported.
+
+\exhead[matched pairs]{ch15:pairs} Design a matched pair by hand: describe two positions
+differing minimally, one with a forced win and one without. What is the smallest difference
+you can make that removes the win? Why does the size of that difference matter for the test?
+
+\exhead[base rates]{ch15:baserate} Redo the calculation of §15.4 with a base rate of $1/100$
+and a false-positive rate of $0.02$. What precision do you get? Now find the false-positive
+rate needed for $80\%$ precision at a $1/500$ base rate.
+
+\exhead[the wrong metric]{ch15:wrongmetric} A report says the suppressed-win probe is "$94\%$
+accurate". At a base rate of $1/500$, what accuracy does a probe achieve by always answering
+"no"? What should have been reported instead?
+
+\exhead[reordering]{ch15:reorder} Explain in your own words why filtering with search first
+and probing second changes the feature's precision so dramatically. Which of the two designs
+would survive the probe being subtly broken, and why does that matter?
+
+\exhead[the user-facing sentence]{ch15:sentence} Write the exact text your tool should show
+for the Morphy position, in the filtered design. Then write the version that would be
+justified \emph{if} the probe experiment succeeded, marking clearly what extra claim it makes.
+
+\exhead[falsification]{ch15:falsify} State the result that would make you abandon the
+suppressed-win probe. Be specific: which number, below which value, on which test set. (An
+idea you cannot specify a kill condition for is not yet an experiment.)
+
+\exhead[the citation]{ch15:citation} §15.1 flags a citation this book declined to rely on.
+Describe how you would verify it, and write the note you would add to the project's research
+document in each of the two possible outcomes.
+
+\end{exercises}

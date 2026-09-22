@@ -1,0 +1,77 @@
+% Compile check for mctsviz.sty -- exercises every macro the guide will use.
+% pdflatex -interaction=nonstopmode _probe.tex
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.8in]{geometry}
+\usepackage{amsmath}
+\usepackage{xskak}
+\usepackage{mctsviz}
+\setchessboard{showmover=false,boardfontsize=15pt,labelfontsize=7pt}
+\pagestyle{empty}
+\begin{document}
+
+\section*{1. Legend}
+\vglegend
+
+\section*{2. Tree frame (iteration 3, real numbers)}
+\begin{center}
+\begin{tikzpicture}
+  % --- root ---
+  \node[vgroot] (root) at (0,0) {Root\\ \tiny $n{=}2$\quad $Q{=}0.97655$};
+  % --- children, FIXED x positions, never move between frames ---
+  \vgheat{1}{4}\node[vgnode, fill=vgfill] (kd6) at (-4.2,-2.2) {Kd6\\ \tiny $n{=}1$\ \ $Q{=}0.96766$};
+  \vgheat{1}{4}\node[vgnode, fill=vgfill] (kf6) at (-1.4,-2.2) {Kf6\\ \tiny $n{=}1$\ \ $Q{=}0.98598$};
+  \node[vgunvisited] (kf5) at (1.4,-2.2) {Kf5\\ \tiny $n{=}0$\ \ $Q_{\mathrm{FPU}}{=}0.66460$};
+  \node[vgunvisited] (kd5) at (4.2,-2.2) {Kd5\\ \tiny $n{=}0$\ \ $Q_{\mathrm{FPU}}{=}0.66460$};
+  % --- edges, width by visits ---
+  \vgedgewidth{1}{4}\draw[vgedge, line width=\vgEW pt] (root) -- (kd6);
+  \vgedgewidth{1}{4}\draw[vgedge, line width=\vgEW pt] (root) -- (kf6);
+  \vgedgewidth{0}{4}\draw[vgedge, line width=\vgEW pt] (root) -- (kf5);
+  \vgedgewidth{0}{4}\draw[vgedge, line width=\vgEW pt] (root) -- (kd5);
+  % --- the new leaf created this iteration ---
+  \node[vgnew] (kf8) at (-1.4,-4.4) {Kf8\\ \tiny new leaf\ \ $V{=}{+}0.95129$};
+  \draw[vgpath] (root) -- (kf6);
+  \draw[vgpath] (kf6) -- (kf8);
+  \vgnewmark{kf8}
+  \vgselectmark{kf6}
+  \vgbackup{kf8}{root}{$+0.95129$}
+  \vgdeltaup{kd6}{\tiny unchanged}
+  \node[vglabel, text width=4cm] at (5.0,-4.4) {selection recursed:\\ it did not stop at the root};
+\end{tikzpicture}
+\end{center}
+
+\section*{3. S-bars: the tallest bar is the move that gets picked}
+\begin{center}
+\begin{tikzpicture}
+  \vgsbaraxis{-0.6}{6.2}{1.0}
+  \vgsbarS{0.4}{0.98598}{0.54585}{Kf6}{sel}
+  \vgsbarS{2.0}{0.96766}{0.55696}{Kd6}{meas}
+  \vgsbarS{3.6}{0.66460}{0.13279}{Kf5}{fpu}
+  \vgsbarS{5.2}{0.66460}{0.12983}{Kd5}{fpu}
+  \node[vglabel, anchor=west, text width=3.4cm] at (6.6,1.4)
+    {solid $=Q$ (earned)\\ pale $=U$ (curiosity)};
+\end{tikzpicture}
+\end{center}
+
+\section*{4. Boards inside a picture (min.\ 11pt; highlights must not hide pieces)}
+\begin{center}
+\begin{tikzpicture}
+  \vgboardnodex{b1}{(0,0)}{4k3/8/4K3/4P3/8/8/8/8 w - - 0 1}{11pt}{%
+    pgfstyle=border, color=PitfallRed, linewidth=0.3ex, markfields={d7,e7,f7}}
+  \vgboardnodex{b2}{(4.6,0)}{4k3/8/5K2/4P3/8/8/8/8 b - - 1 1}{11pt}{%
+    pgfstyle=straightmove, color=GoldPath, arrow=to, markmoves={e8-f8}}
+  \draw[vgpath] (b1) -- (b2) node[midway, above, font=\tiny] {Kf6};
+  \node[vglabel, below=1mm of b1, text width=3cm] {e5 pawn still visible};
+\end{tikzpicture}
+\end{center}
+
+\section*{5. Ghost overlay + refuted node}
+\begin{center}
+\begin{tikzpicture}
+  \node[vgghost] (g) at (0,0) {Kf5\\ \tiny $n{=}0$};
+  \node[vgrefuted] (r) at (3.5,0) {Kf5\\ \tiny $n{=}1$\ \ $Q{=}0.000$};
+  \draw[vgedgeghost] (g) -- (r);
+  \vgdeltadown{r}{\tiny refuted at 128 nodes}
+\end{tikzpicture}
+\end{center}
+
+\end{document}

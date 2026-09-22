@@ -1,0 +1,51 @@
+\chapter{Why the Search Abandons a Move}
+\label{ch:refutation}
+
+We examine how the search handles bad candidate moves across expanded visit budgets.
+
+\section{The Refutation Ladder}
+
+\begin{realdata}[Refutation Ladder]
+\begin{center}
+\begin{minipage}{\linewidth}
+\captionsetup{type=figure}
+\centering
+\subcaptionbox{64 nodes: Kd6 N=31, Kf6 N=24}{\input{figures/fig_3_1a.tex}}\\[2ex]
+\subcaptionbox{128 nodes: Kf5 \& Kd5 visited once ($Q=0.000$)}{\input{figures/fig_3_1b.tex}}\\[2ex]
+\subcaptionbox{800 nodes: Kd6 N=377, Kf6 N=240, drawing moves stay at N=1}{\input{figures/fig_3_1c.tex}}
+\captionof{figure}{\textbf{FIG-3.1: The refutation ladder.} Between 64 and 128 nodes, Kf5 and Kd5 each receive exactly one visit, return $Q = 0.000$ (Equation~\eqref{eq:E4}), and are permanently abandoned for the next 672 nodes.}
+\label{fig:3_1}
+\end{minipage}
+\end{center}
+\end{realdata}
+
+\section{The Score Decay Race}
+
+\begin{established}[PUCT Score Curves]
+\begin{center}
+\input{figures/fig_3_2.tex}
+\captionof{figure}{\textbf{FIG-3.2: PUCT score race.} Solid markers represent measured engine budgets ($N=64, 128$). Dashed curves represent theoretical $S(N) = Q_{\text{FPU}}(N) + U(N)$ derived via the PUCT formula (Equations~\eqref{eq:E10}--\eqref{eq:E11}) as unvisited $U$ grows with $\sqrt{N}$ until a single visit drops $Q$ to zero.}
+\label{fig:3_2}
+\end{center}
+\end{established}
+
+\section{Contrast: When Nothing Matters}
+
+\begin{realdata}[Dead Drawn Positions]
+\begin{center}
+\input{figures/fig_3_3.tex}
+\captionof{figure}{\textbf{FIG-3.3: Opposition Draw Contrast.} In a dead drawn position, visit counts split almost evenly across all 5 legal moves ($N = 171, 148, 172, 155, 152$). A flat tree indicates no tactical differentiation.}
+\label{fig:3_3}
+\end{center}
+\end{realdata}
+
+\section{The Honest Caveat}
+
+\begin{established}[Single-Look vs Deep Refutation]
+\begin{center}
+\input{figures/fig_3_4.tex}
+\captionof{figure}{\textbf{FIG-3.4: One-look vs deep refutation.} Rapid refutation relies on the value head recognizing drawn/lost structures on the first visit (Equation~\eqref{eq:E2}). Deep tactical refutations require building multi-ply subtrees.}
+\label{fig:3_4}
+\end{center}
+\end{established}
+

@@ -1,0 +1,36 @@
+# Chess Speak Out Loud — backend Python dependencies
+# Target: Python 3.11 in a conda env named `cszero` (no root needed).
+#
+#   conda create -n cszero python=3.11 -y
+#   conda activate cszero
+#   pip install -r backend/requirements.txt
+#
+# NOTE ON TORCH (Linux / cluster): the pinned torch below installs the default
+# wheel. For a CUDA GPU node, install the matching CUDA build INSTEAD, e.g.:
+#   pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu124
+# (pick the cuXXX that matches the node's CUDA). CPU-only works but BT3 attention
+# is ~1.5s/forward on CPU — a GPU is what unlocks the real-time Calculation Glow.
+
+# --- Web / API ---
+fastapi==0.139.2
+uvicorn==0.51.0
+pydantic==2.13.4
+python-dotenv==1.2.2
+
+# --- Chess ---
+chess==1.11.2
+
+# --- Neural vision (BT3 transformer attention) ---
+torch==2.13.0
+torchvision==0.28.0
+lczerolens==0.4.0
+onnx==1.22.0
+onnx2torch==1.5.15
+numpy==2.4.6
+
+# --- LLM (DORMANT: LLM_ENABLED = False in backend/app.py). Imported at startup
+#     by backend/llm_client.py, so still required to boot. Remove only if that
+#     import is made lazy. ---
+google-generativeai==0.8.6
+requests
+zstandard

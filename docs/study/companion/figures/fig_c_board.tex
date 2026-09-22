@@ -1,0 +1,27 @@
+% fig_c_board.tex -- The King+Pawn position with legal moves
+\begin{tikzpicture}
+  \node[inner sep=0pt] (board) at (0,0) {%
+    \chessboard[%
+      setfen={4k3/8/4K3/4P3/8/8/8/8 w - - 0 1},
+      boardfontsize=18pt,
+      showmover=true,
+      hlabel=true,
+      vlabel=true,
+      pgfstyle=straightmove,
+      linewidth=0.5ex,
+      arrow=stealth,
+      color=IdeaGreen,
+      markmoves={e6-d6, e6-f6},
+      color=PitfallRed,
+      markmoves={e6-f5, e6-d5}
+    ]%
+  };
+  % Labels for the moves
+  \node[font=\footnotesize\bfseries, text=IdeaGreen, anchor=west] at (3.2, 1.2) {Winning moves:};
+  \node[font=\footnotesize, text=IdeaGreen, anchor=west] at (3.4, 0.7) {$\bullet$ \textbf{Kd6} (step forward-left)};
+  \node[font=\footnotesize, text=IdeaGreen, anchor=west] at (3.4, 0.2) {$\bullet$ \textbf{Kf6} (step forward-right)};
+  
+  \node[font=\footnotesize\bfseries, text=PitfallRed, anchor=west] at (3.2, -0.6) {Drawing moves:};
+  \node[font=\footnotesize, text=PitfallRed, anchor=west] at (3.4, -1.1) {$\bullet$ \textbf{Kf5} (step backward-right)};
+  \node[font=\footnotesize, text=PitfallRed, anchor=west] at (3.4, -1.6) {$\bullet$ \textbf{Kd5} (step backward-left)};
+\end{tikzpicture}

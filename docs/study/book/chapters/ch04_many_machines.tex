@@ -1,0 +1,372 @@
+\chapter{Many machines: exploration, regret, and the first bonus term}
+\label{ch:manymachines}
+
+\begin{objectives}
+\begin{itemize}
+\item Define regret, and use it to say precisely what "wasted thinking" means.
+\item Show by explicit counterexample that always picking the best-so-far move is a
+  catastrophic policy, and that adding randomness is a poor repair.
+\item Build the UCB1 rule from Chapter~\ref{ch:onemachine}'s confidence bound, through
+  three failed attempts, and understand why the final bonus contains $\ln N$ over $n_i$
+  under a square root.
+\item Run UCB1 by hand for twelve pulls over three machines and watch it self-correct.
+\item State what UCB1 guarantees --- and where that guarantee stops applying to chess.
+\end{itemize}
+\end{objectives}
+
+\section{The setup, and the honest definition of waste}
+
+You face $K$ machines. Machine $i$ has an unknown true value $\mu_i$; pulling it returns a
+noisy sample. You have $T$ pulls in total. In chess: $K$ is the number of legal moves at the
+node ($\approx 31$, Chapter~\ref{ch:problem}), a pull is one visit, and $T$ is the node
+budget --- 800, or 1{,}600, or whatever the tool allows.
+
+How do we score a strategy? Not by "did it find the best machine", which is too crude. The
+standard measure is \textbf{regret}: how much worse you did than a genie who knew $\mu$ from
+the start and pulled the best machine every time.
+
+\begin{equation}
+  \label{eq:regret}
+  \text{Regret}(T) \;=\; \underbrace{T\,\mu^{*}}_{\text{the genie's total}}
+  \;-\; \underbrace{\sum_{t=1}^{T} \mu_{i_t}}_{\text{your total}},
+  \qquad \mu^{*} = \max_i \mu_i .
+\end{equation}
+
+Equivalently, if machine $i$ is worse than the best by $\Delta_i = \mu^{*} - \mu_i$ and you
+pulled it $n_i$ times, then
+\begin{equation}
+  \label{eq:regret2}
+  \text{Regret}(T) \;=\; \sum_{i} n_i \Delta_i .
+\end{equation}
+
+Equation~\eqref{eq:regret2} is the one to remember, because it says something a chess player
+recognises: \textbf{a bad move is not expensive to look at if it is only slightly bad, and
+looking briefly at a terrible move costs almost nothing --- what ruins you is spending many
+visits on something clearly inferior.} A search that spends 700 of its 800 nodes on a move
+that loses is not "thorough", it is a search with enormous regret.
+
+\begin{notationbox}
+$K$ machines/moves; $\mu_i$ true value of $i$; $\mu^*$ the best; $\Delta_i = \mu^* - \mu_i$
+its \emph{gap}; $n_i$ times pulled; $N = \sum_i n_i$ total pulls so far; $Q_i$ the running
+average of machine $i$ (Chapter~\ref{ch:onemachine}).
+\end{notationbox}
+
+\section{Attempt 0: just pick the best so far (greedy)}
+
+The obvious rule: pull $\argmax_i Q_i$.
+
+\begin{worked}{how greedy destroys itself}
+Two machines. Truth (unknown to the algorithm): $\mu_A = 0.9$, $\mu_B = 0.5$. Samples are
+noisy, so any single pull can mislead.
+
+\begin{enumerate}
+\item Pull each once. $A$ has an unlucky sample: $x_A = 0.1$. $B$ has a fair one:
+  $x_B = 0.5$. Now $Q_A = 0.1$, $Q_B = 0.5$.
+\item Greedy pulls $\argmax Q = B$ forever. Every $B$ sample keeps $Q_B$ near $0.5 > 0.1$.
+  $A$ is never touched again, so $Q_A$ \emph{never changes}.
+\end{enumerate}
+Over $T = 800$ pulls the regret is roughly $798 \times (0.9-0.5) = 319$: essentially the
+maximum possible. And note the mechanism --- \textbf{the algorithm has no way of ever
+discovering its error}, because the only thing that could correct it is the very action it
+has stopped taking.
+\end{worked}
+
+That failure has a precise chess name. A single shallow look at a strong move can return a
+bad number (the refutation of the refutation is two plies further on). If the search then
+never returns to that move, the engine has locked in a blunder \emph{and cannot detect it}.
+Any usable search must guarantee that a mistakenly-dismissed move gets another chance.
+
+\subsection{Attempt 0b: greedy with a coin ($\epsilon$-greedy)}
+
+Standard first repair: with probability $\epsilon$ (say $0.1$) pull a machine at random,
+otherwise be greedy. This does fix the fatal flaw --- $A$ will eventually be re-sampled ---
+but it is crude in two ways that matter for chess.
+
+\begin{enumerate}
+\item \textbf{It never stops wasting.} It keeps spending $10\%$ of the budget uniformly
+  at random forever, including on machines already known to be terrible. In chess, with
+  $K\approx31$, that means a permanent tax paid mostly on moves that hang a piece.
+\item \textbf{It explores blindly.} It cannot distinguish "unpromising and well-measured"
+  from "unpromising and barely looked at". Those deserve completely different treatment,
+  and $\epsilon$-greedy treats them identically.
+\end{enumerate}
+
+We already have the tool that fixes both: the confidence bound of
+Chapter~\ref{ch:onemachine}. Exploration should be aimed at \emph{uncertainty}, not sprayed.
+
+\section{Building the bonus, one failure at a time}
+
+We want a rule of the form
+\begin{equation}
+  \label{eq:scoreform}
+  \text{score}_i \;=\; Q_i \;+\; (\text{bonus}_i),
+\end{equation}
+pull the highest score, where the bonus expresses "how much room there might be above what
+I have measured". Chapter~\ref{ch:onemachine} says the room is $\epsilon = R\sqrt{\ln(1/\delta)/2n_i}$.
+The only real question is what to put in place of $\delta$. Let us get there by failing
+three times.
+
+\begin{attempt}{1}{a constant bonus}
+\[
+\text{score}_i = Q_i + c .
+\]
+Useless: adding the same constant to everyone changes nothing about the ranking. The bonus
+must depend on how much you have looked at each machine.
+\end{attempt}
+
+\begin{attempt}{2}{bonus $= c/n_i$}
+Now the bonus shrinks with evidence, which is the right direction. But it shrinks
+\emph{too fast}, and something worse: it is unaffected by the passage of time.
+
+Concretely, with $c = 1$: a machine pulled 10 times has bonus $0.1$. Suppose its $Q$ is
+$0.30$ while the current leader sits at $Q = 0.55$. Its score is $0.40$, it never wins the
+argmax --- and as the leader is pulled another thousand times, \emph{nothing about our
+machine changes}. Its bonus stays $0.1$ forever.
+
+Why is that wrong? Because the meaning of "unexplored" is relative. A machine with 10 pulls
+is well understood when the total budget spent is 20, and barely touched when the total is
+100{,}000. \textbf{The bonus must grow as the rest of the search grows.}
+\end{attempt}
+
+\begin{attempt}{3}{bonus $= c/\sqrt{n_i}$}
+Better --- this is the honest $1/\sqrt{n}$ shape of Equation~\eqref{eq:se} --- but it has
+exactly the same defect: no dependence on total pulls $N$. A machine can be permanently
+frozen out by a rival that got lucky early, no matter how long the search runs.
+
+We need a numerator that grows with $N$.
+\end{attempt}
+
+\subsection{Choosing $\delta$: how the $\ln N$ appears}
+
+Return to Equation~\eqref{eq:epsilon}: $\epsilon = R\sqrt{\ln(1/\delta)/2n_i}$. We must
+choose the failure probability $\delta$. Here is the reasoning that fixes it.
+
+We are not making one statement; we are making one statement \emph{per machine, per time
+step}, and we would like all of them to hold simultaneously. If each individual statement
+may fail with probability $\delta$, then over $N$ time steps the chance that \emph{some}
+statement fails grows with $N$. So $\delta$ must shrink as $N$ grows. The standard choice
+(Auer, Cesa-Bianchi and Fischer, 2002) is
+\[
+\delta = N^{-4}, \qquad\text{giving}\qquad \ln(1/\delta) = 4\ln N .
+\]
+Substituting into Equation~\eqref{eq:epsilon} with $R$ and the constants folded into a single
+tunable $c$:
+\[
+\epsilon_i = R\sqrt{\frac{4 \ln N}{2 n_i}} \;=\; \underbrace{R\sqrt{2}}_{\text{call it } c}\,
+\sqrt{\frac{\ln N}{n_i}} .
+\]
+
+\begin{finalform}[UCB1]
+\begin{equation}
+  \label{eq:ucb1}
+  \boxed{\;\text{pull}\;\; \argmax_{i}\left[\; Q_i \;+\; c\,\sqrt{\frac{\ln N}{n_i}}\;\right]\;}
+\end{equation}
+with $N$ the total pulls so far, $n_i$ the pulls of machine $i$, and $c > 0$ an exploration
+constant. Any machine with $n_i = 0$ is treated as having infinite bonus, so every machine
+is pulled once before any is pulled twice.
+\end{finalform}
+
+Now read the two moving parts against the failures they repair:
+\begin{itemize}
+\item $\dfrac{1}{\sqrt{n_i}}$ --- \emph{"I have looked at this $n_i$ times, so my error bar
+  is this wide."} Repairs Attempt~1. It is the law of Chapter~\ref{ch:onemachine}, unchanged.
+\item $\sqrt{\ln N}$ --- \emph{"...but the search has moved on, and being unexamined is more
+  suspicious now than it was."} Repairs Attempts~2 and~3. It grows without bound, so no
+  machine is frozen out forever; and it grows only \emph{logarithmically}, so the revival is
+  slow and cheap. Doubling the search multiplies this term by $\sqrt{\ln 2N/\ln N}$ --- a
+  few percent, not a factor.
+\end{itemize}
+
+\begin{keyidea}
+The bonus is a \textbf{plausibility of being underrated}. It is large when a machine is
+poorly measured relative to how much total measuring has gone on, and it decays as you look.
+The rule is not "explore sometimes"; it is "always take the option that could be best, given
+what you actually know" --- and that single rule produces exploration as a consequence,
+targeted exactly where the ignorance is.
+\end{keyidea}
+
+\section{UCB1 by hand}
+
+\begin{worked}{twelve pulls, three machines}
+Truth (hidden from the algorithm): $\mu_A = 0.7$, $\mu_B = 0.5$, $\mu_C = 0.2$. To keep the
+arithmetic clean, assume each pull of a machine returns exactly its true value plus the
+listed noise. Take $c = 1$. \emph{Illustrative numbers, not engine output.}
+
+\smallskip
+Pulls 1--3 (each machine once, since $n_i = 0$ gives infinite bonus):
+$x_A = 0.3$ (unlucky), $x_B = 0.5$, $x_C = 0.2$. So $Q_A = 0.3$, $Q_B = 0.5$, $Q_C = 0.2$,
+all $n_i = 1$, and $N = 3$.
+
+\smallskip
+Pull 4: $\ln N = \ln 3 = 1.099$, so every bonus is $\sqrt{1.099/1} = 1.048$.
+\[
+\text{scores: } A = 1.348,\quad B = 1.548,\quad C = 1.248 \;\Rightarrow\; \text{pull } B.
+\]
+Say $x_B = 0.5$, so $Q_B = 0.5$, $n_B = 2$, $N = 4$.
+
+\smallskip
+Pull 5: $\ln 4 = 1.386$.
+\[
+A: 0.3 + \sqrt{1.386/1} = 0.3+1.177 = 1.477,\quad
+B: 0.5 + \sqrt{1.386/2} = 0.5+0.833 = 1.333,\quad
+C: 0.2+1.177 = 1.377 .
+\]
+$\Rightarrow$ pull $A$ --- \textbf{note what just happened}: $A$ has the \emph{worst} average
+of the two leaders, and it gets pulled anyway, because $B$'s bonus shrank when $B$ was
+measured. This is the greedy catastrophe being averted, on schedule and without randomness.
+Say $x_A = 0.9$, so $Q_A = (0.3+0.9)/2 = 0.6$, $n_A = 2$, $N = 5$.
+
+\smallskip
+Pull 6: $\ln 5 = 1.609$; bonuses $\sqrt{1.609/2} = 0.897$ for $A$ and $B$, $\sqrt{1.609/1} = 1.269$ for $C$.
+\[
+A: 0.6+0.897 = 1.497,\quad B: 0.5+0.897 = 1.397,\quad C: 0.2+1.269 = 1.469 \;\Rightarrow\;
+\text{pull } A .
+\]
+Say $x_A = 0.7$: $Q_A = 0.733$, $n_A = 3$, $N = 6$.
+
+\smallskip
+Continuing the same arithmetic to $N = 12$ gives roughly $n_A = 6$, $n_B = 4$, $n_C = 2$
+(exact counts depend on the noise you assume; Exercise~\ref{ex:ch4:continue} asks you to
+finish it). The shape is the thing:
+
+\begin{center}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Machine & true $\mu$ & pulls $n_i$ & share of budget \\
+\midrule
+$A$ & 0.7 & 6 & 50\% \\
+$B$ & 0.5 & 4 & 33\% \\
+$C$ & 0.2 & 2 & 17\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The budget is \emph{graded}, not switched. The worst machine is not banned --- it keeps a
+trickle --- and the best gets the most without ever being declared the winner. And regret by
+Equation~\eqref{eq:regret2} is $4(0.2) + 2(0.5) = 1.8$, against the greedy disaster of the
+earlier example.
+\end{worked}
+
+\begin{established}
+\textbf{The guarantee (Auer et al., 2002).} UCB1's expected regret after $T$ pulls is
+$O\!\left(\sum_{i:\Delta_i>0} \frac{\ln T}{\Delta_i}\right)$: it grows only
+\emph{logarithmically} in $T$. Since a strategy that pulls any suboptimal machine a constant
+fraction of the time has regret growing \emph{linearly}, this is a genuine and strong
+result: in the long run UCB1 spends a vanishing fraction of its budget on inferior options,
+without ever needing to know $\mu$.
+\end{established}
+
+Notice also what the $1/\Delta_i$ says: machines that are \emph{nearly} as good as the best
+get pulled a lot. That is not a bug. If two moves are within $0.02$ of each other it does
+not much matter which you play, and the search correctly declines to spend its budget
+separating them --- while a move that is $0.9$ worse is dismissed in a handful of visits.
+Engines look sharp-eyed about blunders and indecisive about near-equal options for exactly
+this reason.
+
+\section{The exploration constant}
+
+$c$ is the one free knob, and it does what you would expect:
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+$c = 0$ & pure greed; the catastrophe of §4.2 \\
+$c$ small & narrow, deep, confident search; risks locking onto an early mistake \\
+$c$ large & broad, shallow search; every move gets attention, nothing is resolved \\
+$c \to \infty$ & uniform sampling; you have re-invented brute force \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{realdata}[title={Real engine setting}]
+Leela's equivalent constant is exposed as the UCI option \texttt{CPuct}, and on the engine in
+\texttt{engine/} its default value is
+\[
+  \texttt{CPuct} = 1.745,
+\]
+alongside \texttt{CPuctBase} $= 38739$ and \texttt{CPuctFactor} $= 3.894$, which make it grow
+slowly with the size of the search (Chapter~\ref{ch:puct} explains why). Verified by running
+\texttt{lc0.exe} with the \texttt{uci} command and reading the option list.
+\end{realdata}
+
+\section{Where the guarantee stops}
+
+Be clear about what has and has not been established, because this is exactly the sort of
+place where a confident-sounding book does damage.
+
+\begin{pitfall}
+The regret theorem assumes independent, identically distributed samples from a fixed
+distribution. In a chess search:
+\begin{itemize}
+\item samples are \emph{not} independent --- successive visits to a move deliberately go
+  down different, related lines;
+\item the distribution is \emph{not} fixed --- as the subtree below a move grows, the value
+  coming back changes systematically (that is the entire point of searching deeper);
+\item and the goal is different: we do not want to maximise the sum of payouts along the
+  way, we want to \emph{identify the best move at the end}. Those are different objectives
+  and are known to have different optimal strategies.
+\end{itemize}
+So UCB1 is the \textbf{motivation} for what engines do, not a proof that it is optimal for
+them. What survives contact with practice is the \emph{shape}: measured value plus a bonus
+that shrinks with evidence and grows with total effort. Every strong Monte-Carlo engine uses
+that shape; none of them satisfies the theorem's hypotheses.
+\end{pitfall}
+
+That honest caveat also opens the door to the next two chapters. Because the theorem does not
+bind us, we are free to change the bonus into something better suited to chess --- and in
+Chapter~\ref{ch:puct} we will replace the purely statistical "how much have I looked?" with
+"how much have I looked, \emph{and how good does a strong player think this move is?}"
+
+\begin{exercises}
+
+\exhead[regret]{ch4:regret} Three moves have true values $0.8, 0.75, 0.1$. A search of 800
+visits allocates them $600, 100, 100$. Compute the regret using Equation~\eqref{eq:regret2}.
+Now compute the regret for the allocation $400, 390, 10$. Which search would you rather have,
+and does regret agree with you?
+
+\exhead[greedy]{ch4:greedy} Construct a two-machine example in which greedy achieves
+\emph{zero} regret, and one in which it achieves the maximum possible. What property of the
+first sample decides which of these happens? What does this tell you about relying on a
+search's first impression of a move?
+
+\exhead[$\epsilon$-greedy's tax]{ch4:epsgreedy} With $K = 31$ moves, $\epsilon = 0.1$, and
+$T = 800$ visits, how many visits go to uniformly random moves? If 25 of the 31 moves are
+blunders with $\Delta_i \approx 1.0$, roughly how much regret does the random component alone
+generate? Compare with the UCB1 behaviour described in §4.4.
+
+\exhead[why $\ln N$ and not $N$]{ch4:lnN} Suppose someone proposes bonus
+$= c\sqrt{N/n_i}$ (no logarithm). Take a machine with $n_i = 1$ and $Q_i = -0.9$ and a leader
+with $Q = 0.8$, $n = 100$, and compute both scores at $N = 100$ and at $N = 10{,}000$. What
+goes wrong, and what does the logarithm buy?
+
+\exhead[bonus table]{ch4:bonustable} Tabulate the UCB1 bonus $\sqrt{\ln N / n_i}$ with $c=1$
+for $n_i \in \{1, 4, 16, 64\}$ at $N = 100$ and again at $N = 10{,}000$. By what factor did
+each bonus grow when the search got 100 times bigger? State the general rule in one sentence.
+
+\exhead[finish the simulation]{ch4:continue} Continue the worked example from pull 7 to pull
+12, assuming every pull of $A$ returns $0.7$, of $B$ returns $0.5$, of $C$ returns $0.2$
+exactly. Give the full table of $Q_i$, $n_i$ and scores at each step, and the final visit
+distribution.
+
+\exhead[the near-equal case]{ch4:neartie} Two moves have $\mu_A = 0.60$ and $\mu_B = 0.58$.
+Using the $\ln T/\Delta_i$ shape of the regret bound, argue qualitatively how the visits
+split, and explain why an engine that "cannot make up its mind" between two moves is
+usually telling you something true about the position rather than failing.
+
+\exhead[budget and $c$]{ch4:tuningc} You run a search with 200 nodes and one with 20{,}000
+nodes. Should $c$ be the same in both? Argue both sides, then look at the real Leela defaults
+in §4.6 and say which side the engine's designers took (\texttt{CPuctBase} and
+\texttt{CPuctFactor} are the clue; you will confirm your reading in Chapter~\ref{ch:puct}).
+
+\exhead[applying it to chess, carefully]{ch4:tochess} List three specific ways in which
+visiting a chess move differs from pulling a slot machine. For each, say whether it makes
+UCB1's assumption more or less reasonable, and name (guessing is fine) what an engine might
+do to compensate.
+
+\exhead[the diagnostic]{ch4:diagnostic} Your tool reports that in one of your games, the
+engine spent $92\%$ of its visits on a single move. In another position it spread visits
+$30/28/25/17$ across four moves. Using this chapter's vocabulary only --- no chess ---
+describe what each distribution says about the position. (Chapter~\ref{ch:readingtree} turns
+your answer into a feature.)
+
+\end{exercises}

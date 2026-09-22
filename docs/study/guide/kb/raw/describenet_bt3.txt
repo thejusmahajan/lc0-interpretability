@@ -1,0 +1,38 @@
+
+General
+~~~~~~~
+         Minimal Lc0 version: v0.30.0
+
+Format
+~~~~~~
+            Weights encoding: LINEAR16
+                       Input: INPUT_CLASSICAL_112_PLANE
+                     Network: NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT
+                      Policy: POLICY_ATTENTION
+                       Value: VALUE_WDL
+                         MLH: MOVES_LEFT_V1
+          Default activation: DEFAULT_ACTIVATION_MISH
+          Smolgen activation: ACTIVATION_NONE
+              FFN activation: ACTIVATION_DEFAULT
+             Input embedding: INPUT_EMBEDDING_PE_DENSE
+
+Training Parameters
+~~~~~~~~~~~~~~~~~~~
+              Training steps: 2790000
+               Learning rate: 3e-05
+                    MSE loss: 0.00788636
+                 Policy loss: 0.167413
+                    Accuracy: 0.395877
+
+Weights
+~~~~~~~
+                    Encoders: 15
+               Encoder heads: 24
+              Embedding size: 768
+                      Dmodel: 768
+                 Encoder DFF: 1024
+                      Policy: Attention
+           Policy activation: ACTIVATION_DEFAULT
+               Policy Dmodel: 0
+                       Value: WDL
+                         MLH: Present

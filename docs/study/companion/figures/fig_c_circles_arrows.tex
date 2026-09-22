@@ -1,0 +1,61 @@
+% fig_c_circles_arrows.tex -- State s (Circles) vs Action a (Arrows)
+% Annotation boxes sit at explicit staggered coordinates rather than on the
+% edges: the four edges converge at the root, so pos=... placement collided and
+% truncated the labels. Outer pair on the upper row, inner pair on the lower.
+\begin{tikzpicture}[scale=0.92,
+    poscircle/.style={circle, draw=NavyBlue, fill=PaleGrey, line width=1.1pt,
+                      minimum size=23mm, align=center, font=\scriptsize},
+    childcircle/.style={circle, draw=WorkGrey!70, fill=white, line width=0.8pt,
+                        minimum size=17mm, align=center, font=\tiny},
+    movearrow/.style={-{Stealth[length=2.8mm]}, draw=BuildBlue, line width=1.3pt},
+    annotbox/.style={draw=DataTeal, fill=DataTeal!8, rounded corners=2pt,
+                     font=\tiny, inner sep=2pt, align=center},
+    dimbox/.style={draw=WorkGrey!60, fill=WorkGrey!5, rounded corners=2pt,
+                   font=\tiny, inner sep=2pt, align=center}
+  ]
+
+  % Root circle (State s)
+  \node[poscircle] (root) at (0, 3.4) {%
+    \textbf{State $s$ (Root)}\\[0.3ex]
+    White to move\\
+    \color{NavyBlue}\textbf{$V(s) = +0.97602$}%
+  };
+
+  % Annotation for Root
+  \node[draw=NavyBlue, fill=NavyBlue!10, rounded corners=2pt, font=\scriptsize,
+        align=left, anchor=west] at (2.6, 3.4) {%
+    \textbf{CIRCLES = POSITIONS (States $s$)}\\
+    The board setup: 64 squares, side to move.\\
+    \textbf{Single-pass evaluation $V(s)$ lives here.}%
+  };
+
+  % Child circles (States s')
+  \node[childcircle] (c1) at (-5.1, -1.9) {\textbf{State $s_1'$}\\(after Kd6)\\$V = +0.96766$};
+  \node[childcircle] (c2) at (-1.7, -1.9) {\textbf{State $s_2'$}\\(after Kf6)\\$V = +0.98598$};
+  \node[childcircle] (c3) at (1.7, -1.9) {\textbf{State $s_3'$}\\(after Kf5)\\$V = \text{unvisited}$};
+  \node[childcircle] (c4) at (5.1, -1.9) {\textbf{State $s_4'$}\\(after Kd5)\\$V = \text{unvisited}$};
+
+  % Arrows (Actions a) -- drawn first so the labels sit on top of them
+  \draw[movearrow] (root) -- (c1);
+  \draw[movearrow] (root) -- (c2);
+  \draw[movearrow, draw=WorkGrey!50] (root) -- (c3);
+  \draw[movearrow, draw=WorkGrey!50] (root) -- (c4);
+
+  % Action labels: outer pair high, inner pair low, so nothing collides
+  \node[annotbox] at (-4.05, 1.35)
+    {\textbf{Action $a_1$: Kd6}\\$P=45.13\%$\\$n=1,\ Q=+0.96766$};
+  \node[annotbox] at (-1.55, -0.15)
+    {\textbf{Action $a_2$: Kf6}\\$P=44.23\%$\\$n=1,\ Q=+0.98598$};
+  \node[dimbox] at (1.55, -0.15)
+    {\textbf{Action $a_3$: Kf5}\\$P=5.38\%$\\$n=0,\ Q=Q_{\mathrm{FPU}}$};
+  \node[dimbox] at (4.05, 1.35)
+    {\textbf{Action $a_4$: Kd5}\\$P=5.26\%$\\$n=0,\ Q=Q_{\mathrm{FPU}}$};
+
+  % Annotation for Arrows
+  \node[draw=BuildBlue, fill=BuildBlue!10, rounded corners=2pt, font=\scriptsize,
+        align=center] at (0, -3.7) {%
+    \textbf{ARROWS = MOVES (Actions $a$)}\\
+    A move is a transition, not a position.\\
+    \textbf{All search statistics ($P, n, W, Q$) live on the arrows!}%
+  };
+\end{tikzpicture}

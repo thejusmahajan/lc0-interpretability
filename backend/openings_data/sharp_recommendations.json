@@ -1,0 +1,98 @@
+[
+  {
+    "eco": "C51",
+    "name": "Evans Gambit",
+    "color": "white",
+    "sac_idea": "Sacrifice the b4 pawn on move 4 to gain rapid central development, open diagonals for the queen and bishop, and launch a furious attack against Black's king on f7.",
+    "themes": ["sacrifice", "pin", "attackingKing", "queenDevelopment"],
+    "why": "A classic romantic gambit that immediately forces sharp, concrete tactical calculations and forces Black onto the defensive from move 4."
+  },
+  {
+    "eco": "C57",
+    "name": "Fried Liver Attack",
+    "color": "white",
+    "sac_idea": "Sacrifice a knight on f7 (5.Nxf7!) to drag Black's king out into the open center, creating overwhelming attacking pressure with 6.Qf3+.",
+    "themes": ["sacrifice", "kingInCenter", "fork", "pin"],
+    "why": "Exploits weak defended squares on f7 with devastating tactical violence when Black plays the naive 5...Nxd5."
+  },
+  {
+    "eco": "C54",
+    "name": "Giuoco Piano: Göring / Center Attack",
+    "color": "white",
+    "sac_idea": "Push d4 early and sacrifice central pawns (c3/d4) for rapid piece development and open e-file/f-file assault lines.",
+    "themes": ["sacrifice", "openFile", "centerControl"],
+    "why": "Replaces passive Italian d3 setups with sharp, energetic piece activity and tactical initiative."
+  },
+  {
+    "eco": "C33",
+    "name": "King's Gambit Accepted",
+    "color": "white",
+    "sac_idea": "Sacrifice the f2-f4 pawn on move 2 to dismantle Black's center, open the f-file for the rook after castling, and dominate the center with e4/d4.",
+    "themes": ["sacrifice", "openFile", "kingAttack", "centerControl"],
+    "why": "The ultimate aggressive response to 1...e5, forcing immediate tactical fights where passive defensive play is punished."
+  },
+  {
+    "eco": "C21",
+    "name": "Danish Gambit / Center Game",
+    "color": "white",
+    "sac_idea": "Sacrifice two pawns (2.d4 exd4 3.c3 dxc3 4.Bc4 cxb2 5.Bxb2) to align raking bishops pointing directly at Black's kingside.",
+    "themes": ["doubleSacrifice", "rakingBishops", "rapidDevelopment"],
+    "why": "Trading pawns for maximum development speed creates massive tactical threats before Black can castle."
+  },
+  {
+    "eco": "B21",
+    "name": "Smith-Morra Gambit",
+    "color": "white",
+    "sac_idea": "Sacrifice 3.c3 against the Sicilian Defense to open the c-file and d-file for rooks while Black's pieces remain cramped.",
+    "themes": ["sacrifice", "openFile", "pieceActivity", "pin"],
+    "why": "Bypasses complex open Sicilian mainlines, seizing the initiative and dictating the tactical flow from move 3."
+  },
+  {
+    "eco": "C44",
+    "name": "Scotch Gambit",
+    "color": "white",
+    "sac_idea": "Play 3.d4 exd4 4.Bc4, delaying pawn recapture to quickly castle and strike at Black's uncastled king with Ng5 or c3.",
+    "themes": ["sacrifice", "leadInDevelopment", "attackingKing"],
+    "why": "Blends dynamic center strikes with sharp kingside threats, avoiding slow maneuvering games."
+  },
+  {
+    "eco": "C24",
+    "name": "Vienna Gambit",
+    "color": "white",
+    "sac_idea": "Play 2.Nc3 followed by 3.f4, combining King's Gambit themes with central knight control to catch Black unprepared.",
+    "themes": ["sacrifice", "openFile", "flankAttack"],
+    "why": "A dangerous surprise weapon that leads to sharp tactical middlegames while retaining central stability."
+  },
+  {
+    "eco": "D08",
+    "name": "Albin Countergambit",
+    "color": "black",
+    "sac_idea": "Counter-strike against 1.d4 d5 2.c4 with 2...e5!, sacrificing a pawn to plant a wedging pawn on d3 that paralyzes White's queenside.",
+    "themes": ["sacrifice", "pawnWedge", "underpromotion", "tacticalTrap"],
+    "why": "Refuses dry Queen's Gambit positions and seizes the initiative as Black with sharp tactical traps (Lasker Trap)."
+  },
+  {
+    "eco": "C57",
+    "name": "Traxler Counterattack",
+    "color": "black",
+    "sac_idea": "Respond to White's 4.Ng5 with 4...Bc5!?, ignoring the fork on f7 to launch a ferocious sac assault on f2 with ...Bxf2+ and ...Nxe4+.",
+    "themes": ["sacrifice", "counterAttack", "kingInCenter"],
+    "why": "Turns a defensive nightmare into an explosive tactical counter-assault where White can easily get checkmated."
+  },
+  {
+    "eco": "B76",
+    "name": "Sicilian Dragon: Yugoslav Attack",
+    "color": "black",
+    "sac_idea": "Fianchetto the dark-squared bishop, castle short, and launch a devastating exchange sac (...Rxc3!) to shatter White's queenside attack.",
+    "themes": ["exchangeSacrifice", "dragonBishop", "pawnStorm"],
+    "why": "High-octane opposite-side castling race where the player with the sharper tactical vision wins."
+  },
+  {
+    "eco": "E97",
+    "name": "King's Indian Defense: Mar del Plata",
+    "color": "black",
+    "sac_idea": "Lock the center with ...e5 and d5, then storm the kingside with ...f5-f4-g5-g4, sacrificing pawns to break open White's king position.",
+    "themes": ["kingsideStorm", "pawnSacrifice", "matingNet"],
+    "why": "The premier aggressive response to 1.d4, trading space on the queenside for a lethal direct attack on White's king."
+  }
+]

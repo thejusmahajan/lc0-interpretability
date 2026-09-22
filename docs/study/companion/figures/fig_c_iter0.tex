@@ -1,0 +1,15 @@
+% fig_c_iter0.tex -- S-bar strip at Iteration 0
+\begin{tikzpicture}
+  \node[anchor=west, font=\scriptsize\itshape, text=WorkGrey] at (-5.5, 4.0) {%
+    Iteration 0: Initial priors and unvisited FPU baseline ($S = Q_{\mathrm{FPU}} + U$):%
+  };
+  \vgsbaraxis{-5.5}{5.5}{1.8}
+  \vgsbarS{-4.125}{0.97602}{0.78752}{Kd6}{sel}
+  \vgsbarS{-1.375}{0.97602}{0.77181}{Kf6}{fpu}
+  \vgsbarS{1.375}{0.97602}{0.09388}{Kf5}{fpu}
+  \vgsbarS{4.125}{0.97602}{0.09179}{Kd5}{fpu}
+
+  \node[draw=GoldPath, fill=GoldPath!10, rounded corners=2pt, font=\tiny\bfseries, text=GoldPath] at (-4.125, 3.4) {%
+    \textbf{SELECTED: Kd6} ($S=1.76354$)%
+  };
+\end{tikzpicture}

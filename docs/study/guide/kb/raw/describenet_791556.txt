@@ -1,0 +1,33 @@
+
+General
+~~~~~~~
+         Minimal Lc0 version: v0.29.0
+
+Format
+~~~~~~
+            Weights encoding: LINEAR16
+                       Input: INPUT_CLASSICAL_112_PLANE
+                     Network: NETWORK_SE_WITH_HEADFORMAT
+                      Policy: POLICY_ATTENTION
+                       Value: VALUE_WDL
+                         MLH: MOVES_LEFT_V1
+          Default activation: DEFAULT_ACTIVATION_MISH
+
+Training Parameters
+~~~~~~~~~~~~~~~~~~~
+              Training steps: 3116000
+               Learning rate: 0.0004
+                    MSE loss: 0.0163048
+                 Policy loss: 1.70955
+                    Accuracy: 66.7249
+
+Weights
+~~~~~~~
+                      Blocks: 15
+                   SE blocks: 15
+                     Filters: 192
+                      Policy: Attention
+           Policy activation: ACTIVATION_SELU
+               Policy Dmodel: 192
+                       Value: WDL
+                         MLH: Present

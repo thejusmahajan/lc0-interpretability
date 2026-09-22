@@ -1,0 +1,33 @@
+\chapter{$U$, the Curiosity Term, and Why It Shrinks}
+\label{ch:u_curiosity}
+
+The exploration bonus for an arrow $a$ is defined as:
+\begin{equation}
+  U(a) = c \cdot P(a) \cdot \frac{\sqrt{N}}{1 + n(a)}
+\end{equation}
+where:
+\begin{itemize}[leftmargin=2em]
+  \item $P(a)$ = the policy prior for this arrow (fixed, from the network)
+  \item $n(a)$ = visits to \textbf{THIS} arrow (grows as we use it)
+  \item $N$ = total visits made from this node (grows as we use any arrow)
+  \item $c$ = exploration constant (about $1.745$ in our trace)
+\end{itemize}
+
+\begin{established}[Read Each Piece Physically]
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{$P(a)$ in the numerator} --- the network's hunch gets a say. A move it likes starts loud.
+  \item \textbf{$n(a)$ in the denominator} --- the more we have already looked down this arrow, the less curiosity it deserves. \textbf{Visit an arrow once and its $U$ halves} (the denominator goes $1 \to 2$). Visit it again and it drops to a third. This is the mechanism that forces the search to move on.
+  \item \textbf{$\sqrt{N}$ in the numerator} --- as the node as a whole gets more attention, everything gets a mild lift, so a promising-but-neglected arrow can come back into contention later. The square root makes this grow slowly.
+\end{itemize}
+\end{established}
+
+So $U$ is large when a move is well-liked and under-examined, and small when it is either disliked or already well-examined. That is the entire idea.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\input{figures/fig_c_ushrink.tex}
+\captionof{figure}{\textbf{Curiosity bonus $U$ decay as visit count $n$ grows.} The $1/(1+n)$ factor halves $U$ on the very first visit ($n = 0 \to 1$), forcing exploration of alternatives.}
+\label{fig:ushrink}
+\end{minipage}
+\end{center}

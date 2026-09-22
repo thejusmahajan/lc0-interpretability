@@ -1,0 +1,455 @@
+\chapter{Adding a prophet: building PUCT one failed attempt at a time}
+\label{ch:puct}
+
+\begin{objectives}
+\begin{itemize}
+\item Say what a policy prior is and what it is not.
+\item Build the PUCT selection rule through five attempts, and be able to say which failure
+  each surviving symbol repairs.
+\item Prove the equilibrium property: when search learns nothing, visits become proportional
+  to the prior --- and check it against real output.
+\item Compute $U(s,a)$ exactly as Leela computes it, including the growth of $c_{\text{puct}}$
+  and the first-play-urgency value of an unvisited move.
+\item Verify your arithmetic against the engine's own \texttt{S} column to five decimals.
+\end{itemize}
+\end{objectives}
+
+\section{The prophet}
+
+Chapter~\ref{ch:uct} ended stuck: UCT must taste every move before it can prefer any, and at
+$b\approx31$ that is unaffordable. What we want is what a strong player has --- a glance that
+says \emph{these two moves, probably; that one, conceivably; the other twenty-eight, no}.
+
+Assume we have one. Formally, a \textbf{policy prior} is a probability distribution over the
+legal moves of a position:
+\[
+  P(a \given s) \ge 0, \qquad \sum_{a \in \mathcal{A}(s)} P(a\given s) = 1 .
+\]
+Where it comes from is Part~\textsc{iv}'s problem; here it is an oracle we may consult for
+free. What it means is worth being exact about, because the whole design depends on it:
+
+\begin{keyidea}
+$P(a\given s)$ is \textbf{not} an estimate of how good the move is. It is an estimate of
+\emph{how likely this move is to be the one finally played} --- literally, what fraction of
+the time a strong player (in Leela's case, its own trained self) would choose it. It is a
+\textbf{claim about attention}, not about value. A move can be excellent and have low $P$ if
+it is the sort of move that is usually wrong.
+\end{keyidea}
+
+That last sentence is not a technicality. It is the mechanism behind everything your project
+calls a "hidden gem", and here it is in real numbers before we start:
+
+\begin{realdata}[title={Real engine output: priors in the Morphy position, before 16.Qb8+}]
+Position after 15\ldots Nxd7 in Morphy--Brunswick/Isouard, Paris 1858. 46 legal moves. Top
+priors from the network in \texttt{engine/791556.pb.gz}, no search:
+\begin{center}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+Move & $P(a\given s)$ & \\
+\midrule
+Qb7   & 31.93\% & the network's instinct \\
+Qb5   &  9.57\% & \\
+Qc3   &  8.33\% & \\
+Qxe6+ &  7.92\% & \\
+Rxd7  &  7.81\% & \\
+Qa4   &  7.65\% & \\
+\ \ \vdots & \vdots & \\
+\textbf{Qb8+} & \textbf{1.60\%} & \textbf{Stockfish (depth 30): mate in 2} \\
+\bottomrule
+\end{tabular}
+\end{center}
+The move that forces mate in two gets $1.60\%$ of the network's attention. It is not ranked
+first, second or third. Any design that decides in advance which moves are worth looking at
+must survive this position.
+\end{realdata}
+
+\section{Five attempts}
+
+We want a selection rule of the shape $\argmax_a [\,Q(s,a) + U(s,a)\,]$ where $U$ now uses
+$P$. Chapter~\ref{ch:uct} set three requirements: (R1) most moves may get \emph{zero} visits;
+(R2) any move must still be reachable later; (R3) with enough visits, measurement must be
+able to overrule the prior.
+
+\begin{attempt}{1}{filter the move list --- search only the top $k$ priors}
+Simple, fast, and used by real programs in other domains. Take $k = 3$ in the Morphy
+position: we search Qb7, Qb5, Qc3, and \textbf{mate in two is not in the list}. Not at 800
+nodes, not at eight billion.
+
+Fails R2, catastrophically and silently. A hard cutoff converts the prior's mistakes into
+the engine's permanent blind spots --- and the moves a policy under-rates are exactly the
+surprising ones, which are exactly the ones a training tool exists to show you.
+\end{attempt}
+
+\begin{attempt}{2}{add the prior to the value --- $Q(s,a) + c\,P(a\given s)$}
+Now every move is reachable in principle. But the prior's contribution never decays, so it
+is not a \emph{bonus for uncertainty}, it is a permanent thumb on the scale.
+
+With $c = 1$ in the Morphy position: Qb7 gets a standing $+0.319$ and Qb8+ a standing
+$+0.016$. Suppose the search does 100{,}000 visits and establishes the true values --- Qb8+
+wins by force, $Q = 1.0$; Qb7 is merely much better, $Q \approx 0.66$. Scores: Qb8+ gives
+$1.016$, Qb7 gives $0.979$. Here it happens to work, because the truth gap ($0.34$) exceeds
+the prior gap ($0.30$). Make the position one where the best move wins by a small margin and
+the prior wins permanently.
+
+Fails R3: no amount of evidence can wash the prior out. And it fails R1 too, in the other
+direction --- because the term is a constant, the search has no reason to \emph{stop}
+returning to a well-measured move.
+\end{attempt}
+
+\begin{attempt}{3}{multiply the prior into UCB1's bonus ---
+  $Q + c\,P\sqrt{\dfrac{\ln N}{n}}$}
+Now we are close to something sensible: the bonus decays with visits (good), grows slowly
+with total search (good), and is scaled by how promising the move looked (new and good).
+
+One fatal defect remains, and it is the same one that sank UCT: at $n = 0$ the term
+$1/\sqrt{n}$ is \textbf{infinite}. Every legal move still gets a mandatory first visit,
+whatever its prior. We are back to spending 31 visits before the second look at anything.
+
+Fails R1. The fix must make the bonus \emph{finite} at zero visits.
+\end{attempt}
+
+\begin{attempt}{4}{make it finite at zero --- $Q + c\,P\dfrac{\sqrt{\ln N}}{1+n}$}
+Replacing $1/\sqrt{n}$ with $1/(1+n)$ does exactly what is needed: at $n=0$ the bonus is
+$c\,P\sqrt{\ln N}$, which is \emph{small for a move with a small prior}. A move with
+$P = 0.4\%$ starts with a small claim on the budget, and the search is free to ignore it.
+R1 satisfied.
+
+But now look at the cost of that change. The denominator went from $\sqrt{n}$ to $n$, so the
+bonus decays much faster than before. Meanwhile the numerator still grows only like
+$\sqrt{\ln N}$ --- glacially: from $N = 100$ to $N = 10{,}000$ it grows by a factor of
+$\sqrt{\ln 10^4/\ln 10^2} = \sqrt{2} = 1.41$. Fast decay plus glacial growth means a
+neglected move's priority stays flat essentially forever. In the Morphy position, Qb8+'s
+bonus would creep up by $41\%$ over a hundredfold increase in search --- while it needs to
+grow by a factor of about ten to become competitive.
+
+Fails R2 in practice, if not quite in theory. \textbf{The numerator has to grow faster.}
+\end{attempt}
+
+\begin{attempt}{5}{let the numerator grow like $\sqrt{N}$}
+\[
+  U(s,a) = c_{\text{puct}}\;P(a\given s)\;\frac{\sqrt{N(s)}}{1 + N(s,a)} .
+\]
+Now, from $N = 100$ to $N = 10{,}000$ the numerator grows tenfold, not by $41\%$. A move
+passed over early is not passed over forever: its claim strengthens steadily as the search
+pours visits elsewhere. R2 satisfied --- and we will watch it happen, in real output, in §6.5.
+\end{attempt}
+
+\begin{finalform}[PUCT --- the rule Leela actually uses]
+\begin{equation}
+  \label{eq:puct}
+  \boxed{\;
+  a^{*} \;=\; \argmax_{a}\left[\;
+  \underbrace{Q(s,a)}_{\text{what I measured}}
+  \;+\;
+  \underbrace{c_{\text{puct}}\;P(a\given s)\;\frac{\sqrt{N(s)}}{1+N(s,a)}}_{U(s,a):\ \text{what I haven't checked}}
+  \;\right]\;}
+\end{equation}
+with $N(s) = \sum_b N(s,b)$ the total visits already spent at this node.
+\end{finalform}
+
+Read the three moving parts against the three failures they repair:
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Symbol & Says & Repairs \\
+\midrule
+$P(a\given s)$ & "this much of my attention is owed to this move" & Attempt 1's blindness \\
+$\dfrac{1}{1+N(s,a)}$ & "\ldots divided by how much I have already looked" & Attempt 3's mandatory first visit \\
+$\sqrt{N(s)}$ & "\ldots multiplied by how much thinking has happened here" & Attempt 4's frozen-out move \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{keyidea}
+$U$ is a \textbf{claim on the budget}. Read $P\sqrt{N}/(1+n)$ as: \emph{"I was promised
+roughly a $P$ share of the attention here; $N$ units of attention have been spent; I have
+had $n$. How overdue am I?"} The whole formula is one sentence: \textbf{take the move with
+the best combination of proven performance and unpaid attention.}
+\end{keyidea}
+
+\section{The equilibrium property: visits become the policy}
+
+Here is a small theorem that makes PUCT much easier to think about --- and, unusually for
+this subject, it is two lines.
+
+\begin{established}
+\textbf{Claim.} Suppose the search learns nothing: every move's $Q$ is identical (call it
+$q$). Then PUCT allocates visits in proportion to the prior, $N(s,a) \propto P(a\given s)$.
+
+\smallskip
+\textbf{Proof.} Selection always picks the maximum of $Q + U$. If all $Q$ are equal to $q$,
+the maximum of $q + U$ is the maximum of $U$. A rule that repeatedly picks the largest $U$
+and thereby decreases it drives all the $U$'s towards equality. So at equilibrium, for any
+two moves $a$ and $b$,
+\[
+  c_{\text{puct}}P_a\frac{\sqrt{N}}{1+n_a} \;=\; c_{\text{puct}}P_b\frac{\sqrt{N}}{1+n_b}
+  \quad\Longrightarrow\quad \frac{P_a}{1+n_a} = \frac{P_b}{1+n_b}
+  \quad\Longrightarrow\quad 1+n_a \;\propto\; P_a . \qquad\blacksquare
+\]
+\end{established}
+
+\begin{keyidea}
+\textbf{The visit distribution is the prior, reshaped by what search discovered.} If search
+finds nothing, visits reproduce the policy exactly. Every departure of the visit distribution
+from the policy distribution is \emph{information the search added}. That single sentence is
+the foundation of Chapter~\ref{ch:readingtree}, of your project's "optical trap" and
+"hidden gem" categories, and of how Leela trains itself (Chapter~\ref{ch:heads}).
+\end{keyidea}
+
+We can test the claim on real output. Take a position where the search genuinely learns
+nothing --- a dead-drawn king-and-pawn ending in which every move evaluates to exactly $0.000$:
+
+\begin{realdata}[title={Real engine output: 800 nodes on a position where all moves draw}]
+White Ke4, pawn e5, Black Ke6 (Black holds the opposition). Stockfish at depth 30 confirms
+$0.00$ for every move. Leela's search after 800 nodes:
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Move & $P$ & $N$ & share of visits & $Q$ \\
+\midrule
+Kf4 & 19.82\% & 172 & 21.5\% & $0.0059$ \\
+Kd4 & 19.74\% & 171 & 21.4\% & $0.0059$ \\
+Kd3 & 20.45\% & 155 & 19.4\% & $0.0000$ \\
+Kf3 & 20.19\% & 152 & 19.0\% & $0.0000$ \\
+Ke3 & 19.79\% & 148 & 18.5\% & $0.0000$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Priors are nearly uniform ($\approx 20\%$ each) and so are the visits ($\approx 20\%$ each),
+as the theorem predicts. The residual tilt towards Kf4 and Kd4 is not noise: those two moves
+have $Q = 0.0059$ against $0.0000$ for the rest --- a difference in the fifth decimal place of
+a drawn position, and the search still spent $3\%$ more of its budget on them. The mechanism
+is exactly as advertised, down to a rounding error's worth of "advantage".
+\end{realdata}
+
+And now the same test where the search \emph{does} learn something:
+
+\begin{realdata}[title={Real engine output: 1600 nodes on the initial position}]
+\begin{center}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Move & $P$ & $N$ & visit share & $Q$ & share $-$ prior \\
+\midrule
+e4  & 22.22\% & 532 & 35.6\% & $0.1058$ & $+13.4$ pts \\
+d4  & 18.41\% & 451 & 30.2\% & $0.1062$ & $+11.8$ pts \\
+Nf3 & 14.22\% & 230 & 15.4\% & $0.0995$ & $+1.2$ pts \\
+c4  &  9.19\% & 100 &  6.7\% & $0.0849$ & $-2.5$ pts \\
+g3  &  7.26\% &  64 &  4.3\% & $0.0733$ & $-3.0$ pts \\
+e3  &  4.43\% &  28 &  1.9\% & $0.0483$ & $-2.5$ pts \\
+\bottomrule
+\end{tabular}
+\end{center}
+Here the $Q$'s differ, so the visit distribution is a \textbf{sharpened} version of the
+prior: the top two moves take a larger share than their priors promised, and everything below
+Nf3 takes less. Search has concentrated attention on what measurement supports. That
+sharpening is the search's entire contribution, and Chapter~\ref{ch:heads} shows it is also
+precisely the training signal that improves the network.
+\end{realdata}
+
+\section{The two remaining pieces of real arithmetic}
+
+Equation~\eqref{eq:puct} is the formula in every paper. The engine on your disk uses two
+refinements, and you need both to reproduce its numbers exactly --- which we are about to do.
+
+\subsection{$c_{\text{puct}}$ grows with the search}
+
+Leela does not use a constant. It uses
+\begin{equation}
+  \label{eq:cpuctgrow}
+  c_{\text{puct}}(N) \;=\; \texttt{CPuct} \;+\; \texttt{CPuctFactor}\cdot
+  \ln\!\left(\frac{N + \texttt{CPuctBase} + 1}{\texttt{CPuctBase}}\right),
+\end{equation}
+with the defaults on your engine being $\texttt{CPuct} = 1.745$,
+$\texttt{CPuctBase} = 38739$, $\texttt{CPuctFactor} = 3.894$ (read off
+\texttt{lc0.exe}'s own \texttt{uci} option list).
+
+The logarithm means that for small searches the growth is negligible --- at $N = 182$,
+$c_{\text{puct}} = 1.745 + 3.894\ln(1.00470) = 1.745 + 0.018 = 1.763$ --- while at
+$N = 10^6$ it reaches about $14$. The design intent is legible: a small search should trust
+the network, and a huge search should be increasingly willing to look at what the network
+dismissed. (Compare your answer to Exercise~\ref{ex:ch4:tuningc}.)
+
+\subsection{First-play urgency: what $Q$ does an unvisited move have?}
+
+Equation~\eqref{eq:puct} needs $Q(s,a)$ for every candidate --- including moves never visited,
+which have no average at all. What value should they be given?
+
+\begin{itemize}
+\item \emph{Optimistic} ($Q = +1$): every move looks winning until checked, so everything gets
+  visited once. That is UCT again.
+\item \emph{Neutral} ($Q = 0$): reasonable, but wrong in won and lost positions --- in a
+  position where you are winning by a queen, "0" is a pessimistic slander of every unexamined
+  move; in a lost position it is wild optimism.
+\item \emph{Inherit the parent} ($Q = Q(s)$): assume a move is as good as the position it
+  comes from --- sensible, but then unvisited moves tie with measured ones and get pulled in
+  too eagerly.
+\end{itemize}
+
+Leela's default, \textbf{FPU reduction}, takes the third option and subtracts a penalty that
+grows with how much of the prior has already been explored:
+\begin{equation}
+  \label{eq:fpu}
+  Q_{\text{FPU}}(s) \;=\; Q(s) \;-\; \texttt{FpuValue}\cdot\sqrt{\textstyle\sum_{b \,:\, N(s,b)>0} P(b\given s)},
+  \qquad \texttt{FpuValue} = 0.33 .
+\end{equation}
+The reasoning: if you have already examined moves covering $80\%$ of the prior mass and none
+of them beat what you have, the remaining $20\%$ is probably not hiding a better move ---
+so discount it. Early in a node's life the penalty is near zero; late in its life it is
+substantial.
+
+\begin{worked}{deriving FPU from real output --- a piece of detective work}
+Leela's verbose output prints \texttt{Q: 0.0} for an unvisited move (there is no average to
+print), but its \texttt{S} column is the real PUCT score, and $\texttt{S} = Q_{\text{FPU}} +
+U$. So we can recover the hidden value the engine actually used.
+
+In the Morphy position at $N(s) = 182$, the line for Qb8+ reads
+$\texttt{U} = 0.37909$, $\texttt{S} = 0.69780$. Therefore
+\[
+  Q_{\text{FPU}} = \texttt{S} - \texttt{U} = 0.69780 - 0.37909 = 0.31871 .
+\]
+Check it against Equation~\eqref{eq:fpu}. The root's own value is $Q(s) = 0.6117$, and the
+engine helpfully prints the visited prior mass on its root line: $\texttt{P: 79.96\%}$. So
+\[
+  Q(s) - 0.33\sqrt{0.7996} \;=\; 0.6117 - 0.33(0.8942) \;=\; 0.6117 - 0.2951 \;=\; 0.3166 .
+\]
+Against the recovered $0.31871$ --- agreement to three decimals, the residue being the
+rounding of the printed percentages. \textbf{Equation~\eqref{eq:fpu} is confirmed on real
+output.}
+\end{worked}
+
+\section{Watching R2 work: the queen sacrifice comes back}
+
+We can now close the loop on the requirement that killed three of our five attempts. Recall
+Qb8+ has a prior of $1.60\%$ and forces mate. Here is what PUCT does with it, from the actual
+engine:
+
+\begin{realdata}[title={Real engine output: Morphy position, ranked by PUCT score $S$}]
+At $N(s) = 182$ visits (search still running):
+\begin{center}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Move & $P$ & $N$ & $Q$ & $U$ & $S = Q+U$ \\
+\midrule
+Qb7   & 31.93\% & 169 & $0.6575$ & $0.0445$ & $\mathbf{0.70199}$ \\
+\textbf{Qb8+} & \textbf{1.60\%} & \textbf{0} & $0.3187^{*}$ & $0.3791$ & $\mathbf{0.69780}$ \\
+Rxd7  &  7.81\% &   4 & $0.3155$ & $0.3701$ & $0.68387$ \\
+Qc3   &  8.33\% &   2 & $-0.0005$ & $0.6583$ & $0.65774$ \\
+Qb5   &  9.57\% &   2 & $-0.1019$ & $0.7565$ & $0.65235$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+\footnotesize $^{*}$ the FPU value recovered in §6.4.2; the engine's \texttt{Q} column prints
+$0.0$ for unvisited moves.
+\normalsize
+
+\medskip
+The mating move, which the network rated at $1.60\%$ and which has \textbf{never been
+looked at}, is ranked \emph{second} --- behind the leader by $0.004$. Its entire claim comes
+from the $U$ term: $169$ visits have piled into Qb7, and $\sqrt{N}/(1+n)$ has been quietly
+compounding.
+
+Six visits later, the search selects it. The result:
+\begin{center}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+At $N(s) = 188$ & $P$ & $N$ & $Q$ & $U$ & $S$ \\
+\midrule
+\textbf{Qb8+} & 1.60\% & \textbf{3} & $\mathbf{1.0000}$ & $0.0964$ & $\mathbf{1.09636}$ \\
+Qb7   & 31.93\% & 172 & $0.6587$ & $0.0445$ & $0.70310$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+$Q = 1.0$ exactly: not an estimate but a proof --- 16.Qb8+ Nxb8 17.Rd8\# is a terminal
+sequence, so the value is certain rather than sampled. The engine reports
+\texttt{bestmove b3b8} and \emph{stops searching}, at 188 nodes out of a requested 6400.
+\end{realdata}
+
+\begin{keyidea}
+Three visits beat one hundred and seventy-two. This is worth dwelling on, because it is where
+the naive reading of Monte-Carlo search --- "the most-visited move wins" --- breaks. A proven
+result outranks a well-sampled estimate. Chapter~\ref{ch:readingtree} deals with the general
+question of which number decides the move, and Chapter~\ref{ch:engineering} with how
+certainty propagates.
+\end{keyidea}
+
+And notice what would have happened under each rejected attempt: Attempt~1 (top-3 filter)
+never sees the move. Attempt~2 (constant prior bonus) gives it a standing $+0.016$ against
+Qb7's $+0.319$ --- it would need the search to have already discovered the truth it is
+supposed to be discovering. Attempt~4 ($\sqrt{\ln N}$ numerator) reaches $U \approx 0.04$
+instead of $0.379$ at the same point, ranking Qb8+ somewhere in the twenties. \textbf{The
+$\sqrt{N}$ is the reason the mate was found.}
+
+\begin{pitfall}
+Do not over-generalise this happy ending. PUCT guarantees that a low-prior move's claim
+\emph{grows}, not that it grows \emph{in time}. If the prior had been $0.05\%$ rather than
+$1.60\%$, the same computation gives $U \approx 0.012$ at $N=182$, and the move would need
+roughly a thousand times more search to surface. Leela does miss things, and the shape of
+what it misses is precisely "moves its policy rates near zero in positions where nothing else
+is failing". Chapter~\ref{ch:lookahead} is about whether we can detect those cases from
+inside the network instead of waiting for search to stumble on them.
+\end{pitfall}
+
+\begin{repobox}[title={in this repository}]
+$P$ is the \texttt{policy} array this project already extracts and draws as arrows on the
+board; \texttt{U} and \texttt{S} are visible in \texttt{--verbose-move-stats}. The
+"policy-blindness" metric in your diagnosis layer is a statement about $P$; the
+"optical trap / hidden gem" classification is a statement about the gap between $P$ and the
+visit distribution, i.e.\ about how much of §6.3's sharpening happened and in which direction.
+\end{repobox}
+
+\begin{exercises}
+
+\exhead[what P means]{ch6:pmeans} In one sentence each, state what $P(a\given s) = 0.32$
+claims and what it does \emph{not} claim. Then explain how a move can have $P = 1.6\%$ and be
+the only move that wins.
+
+\exhead[compute U]{ch6:computeu} A node has $N(s) = 100$ total visits. Move $a$ has
+$P = 0.25$ and $N(s,a) = 40$; move $b$ has $P = 0.05$ and $N(s,b) = 0$. Using
+$c_{\text{puct}} = 1.745$, compute $U$ for both. Which is larger, and by what factor?
+
+\exhead[the crossover]{ch6:crossover} Continue the previous exercise: move $a$ has
+$Q = 0.55$ and move $b$ has $Q_{\text{FPU}} = 0.30$. Compute $S$ for both. Now recompute at
+$N(s) = 400$ with $a$ having absorbed all the extra visits ($N(s,a) = 340$). At which of the
+two search sizes does $b$ get selected? State the mechanism in one sentence.
+
+\exhead[verify the engine]{ch6:verify} From the real table in §6.5, take the Qb7 line at
+$N(s)=182$: $P = 0.3193$, $N(s,a) = 169$. Compute $U$ using Equation~\eqref{eq:puct} with
+$c_{\text{puct}}$ from Equation~\eqref{eq:cpuctgrow}. Compare with the engine's $0.04453$.
+How many decimal places do you match?
+
+\exhead[the equilibrium theorem]{ch6:equilibrium} Reproduce the proof of §6.3 in your own
+words. Then: a node has three moves with priors $0.6, 0.3, 0.1$ and all $Q$ equal. After 100
+visits, what does the theorem predict for $n_1, n_2, n_3$? (Remember it is $1+n_a$ that is
+proportional to $P_a$; discuss whether the "+1" matters at 100 visits and at 3 visits.)
+
+\exhead[sharpening]{ch6:sharpening} Using the real 1600-node table for the initial position,
+compute for each move the ratio (visit share)/(prior). Which moves have ratio above 1?
+Explain what a ratio of $1.60$ for e4 and $0.43$ for e3 tells you, in terms of §6.3.
+
+\exhead[FPU by hand]{ch6:fpu} A node has $Q(s) = -0.20$ and has visited moves covering $45\%$
+of the prior mass. Compute $Q_{\text{FPU}}$ for its unvisited moves. Now suppose the visited
+mass rises to $90\%$: recompute. Explain in one sentence why the penalty should grow.
+
+\exhead[FPU's effect on style]{ch6:fpustyle} Suppose you set \texttt{FpuValue} to $0.0$
+(unvisited moves inherit the parent's value untouched). Describe how the search's behaviour
+changes: broader or narrower? Now set it to $1.0$. Which setting would make an engine more
+likely to find a surprising sacrifice, and what does it cost?
+
+\exhead[$c_{\text{puct}}$ growth]{ch6:cpuct} Using Equation~\eqref{eq:cpuctgrow} with your
+engine's defaults, compute $c_{\text{puct}}$ at $N = 800$, $N = 10^5$, and $N = 10^7$. Plot
+roughly. What does the designers' choice say about how much to trust the policy at each
+scale, and does it agree with the answer you gave in Exercise~\ref{ex:ch4:tuningc}?
+
+\exhead[the hidden move's timetable]{ch6:timetable} A move has $P = 0.005$ and $N(s,a)=0$ in
+a node where the leader holds $Q = 0.60$ and the FPU value is $0.30$. Using
+$c_{\text{puct}} \approx 1.75$, solve for the value of $N(s)$ at which the unvisited move's
+$S$ overtakes the leader's $Q$. Comment on whether that node count is reachable in your
+tool's configuration, and what this implies for what the tool can promise a user.
+
+\exhead[design]{ch6:design} Compare Equation~\eqref{eq:puct} with the formula you invented in
+Exercise~\ref{ex:ch5:designfix}. Name one thing yours does better and one thing it does
+worse. (This is not a trick question --- several published variants differ from PUCT in
+defensible ways.)
+
+\end{exercises}

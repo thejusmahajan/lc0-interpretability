@@ -1,0 +1,424 @@
+\chapter{What a chess engine is actually trying to do}
+\label{ch:problem}
+
+\begin{objectives}
+\begin{itemize}
+\item State the engine problem as exactly two questions, and show that every engine ever
+  built is a different answer to those two questions.
+\item Compute, from your own 9{,}030-game corpus, why brute force is not merely slow but
+  physically impossible.
+\item Run minimax and alpha--beta by hand on a small tree, and count the nodes each visits.
+\item Write down the classical evaluation function $f(s)=\sum_i w_i \phi_i(s)$ and name
+  precisely the two things it cannot do.
+\item Explain why Leela replaces \emph{both} halves of the classical answer, not just one.
+\end{itemize}
+\end{objectives}
+
+\section{Two questions, and only two}
+
+Put a position in front of any chess-playing machine ever built --- Turing's paper machine
+of 1948, Deep Blue, Stockfish, Leela --- and it must answer two questions.
+
+\begin{keyidea}
+\textbf{Question 1 (evaluation).} \emph{How good is this position?} Reduce a board to a
+number, or to something a number can be extracted from.
+
+\medskip
+\textbf{Question 2 (search).} \emph{Where should I spend my thinking?} There are more
+continuations than can ever be examined. Which ones get examined?
+\end{keyidea}
+
+That is the whole subject. Everything in the rest of this book --- transformers, attention
+heads, Monte-Carlo trees, linear probes --- is machinery bolted onto one of those two
+questions. It is worth fixing the shape of the problem in your head now, because the
+distinctive thing about Leela is easy to state once you have it:
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & \textbf{Answer to Q1 (evaluate)} & \textbf{Answer to Q2 (where to look)} \\
+\midrule
+Deep Blue, Stockfish (classical) & hand-written formula & alpha--beta, hand-written ordering \\
+Stockfish (modern, NNUE)         & small neural network & alpha--beta, hand-written ordering \\
+\textbf{Leela / AlphaZero}       & \textbf{neural network} & \textbf{neural network} + Monte-Carlo tree \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Leela's real novelty is the right-hand column. Plenty of engines learned their evaluation.
+Leela is the family that also \emph{learned where to look} --- and that single fact is what
+makes it interpretable in a way Stockfish is not, and therefore what makes your whole
+project possible. When you ask Leela "what were you considering?", it has an answer, because
+considering is something it does with a learned opinion rather than with a fixed procedure.
+
+\section{Why you cannot simply look at everything}
+
+The naive answer to Question~2 is: look at everything. Let us kill it with real numbers ---
+yours.
+
+\subsection{The branching factor, measured on your own games}
+
+The \textbf{branching factor} $b$ is how many legal moves there are, on average, in a
+position. Textbooks say "about 30" and rarely say where the number came from. Here it is,
+measured on the corpus in \texttt{games\_of\_derdiedasdie/}:
+
+\begin{realdata}[title={Real data: your corpus (\texttt{tools/corpus\_stats.py})}]
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Games & 9{,}030 \\
+Positions examined & 549{,}816 \\
+\textbf{Mean legal moves per position} & \textbf{31.35} \\
+Median legal moves & 33 \\
+Most legal moves seen in any position & 111 \\
+Fewest (forced move) & 1 \\
+Mean game length & 60.9 plies \\
+\midrule
+Mean legal moves, opening (moves 1--12) & 32.84 \\
+Mean legal moves, middlegame & 32.48 \\
+Mean legal moves, endgame ($\le 12$ pieces) & 15.81 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{realdata}
+
+So $b \approx 31$ in your chess. Note the shape of that table: the branching factor is
+essentially flat at $\approx 32$ through opening and middlegame and then halves in the
+endgame. That is one reason engines feel "deeper" in endgames --- the tree is genuinely
+narrower there, so the same node budget buys more plies.
+
+\begin{notationbox}
+A \textbf{ply} is one move by one side. "White plays $e4$" is one ply. A \emph{move} in
+chess notation ($1.e4\ e5$) is two plies. Engine depth is always counted in plies. In this
+book, $d$ is depth in plies.
+\end{notationbox}
+
+\subsection{The count}
+
+If every position has $b$ replies, then looking $d$ plies ahead exhaustively means visiting
+about
+\begin{equation}
+  \label{eq:treesize}
+  T(d) \;=\; b^{d}
+\end{equation}
+leaf positions. Put $b = 31$ in and turn the crank:
+
+\begin{center}
+\begin{tabular}{@{}rlr@{}}
+\toprule
+Depth $d$ (plies) & In chess terms & Positions $31^d$ \\
+\midrule
+2  & one move each        & $961$ \\
+4  & two moves each       & $\approx 9.2\times10^{5}$ \\
+6  & three moves each     & $\approx 8.9\times10^{8}$ \\
+8  & four moves each      & $\approx 8.5\times10^{11}$ \\
+10 & five moves each      & $\approx 8.2\times10^{14}$ \\
+20 & ten moves each       & $\approx 6.7\times10^{29}$ \\
+40 & a short game         & $\approx 4.5\times10^{59}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{worked}{how long would depth 20 take?}
+Suppose you evaluate a billion ($10^9$) positions per second --- generous; a strong
+classical engine on good hardware manages a few tens of millions.
+\[
+  \frac{6.7\times 10^{29}\ \text{positions}}{10^{9}\ \text{positions/second}}
+  \;=\; 6.7\times 10^{20}\ \text{seconds}.
+\]
+A year is about $3.15\times10^{7}$ seconds, so this is
+\[
+  \frac{6.7\times10^{20}}{3.15\times10^{7}} \;\approx\; 2.1\times10^{13}\ \text{years},
+\]
+roughly \emph{fifteen hundred times the age of the universe} --- to see ten moves ahead
+once. And your games last thirty moves, not ten.
+\end{worked}
+
+Shannon made this argument in 1950 and put the number of plausible chess games at about
+$10^{120}$, now called the Shannon number. The exact exponent does not matter. What matters
+is the shape of Equation~\eqref{eq:treesize}: the cost is \emph{exponential} in depth, so
+hardware improvements buy almost nothing. A machine a thousand times faster buys you
+\[
+  \log_{31}(1000) \;\approx\; 2.0 \quad\text{extra plies.}
+\]
+One extra move each. That is what a factor of a thousand is worth. Every serious idea in
+engine design is therefore an idea about \emph{not looking at things}.
+
+\begin{keyidea}
+Exponential growth means the interesting question is never "how fast can I evaluate?" but
+"\textbf{how small can I make the effective branching factor?}" Write $b_{\text{eff}}$ for
+the average number of moves an engine actually explores per node. Classical alpha--beta
+with good move ordering gets $b_{\text{eff}}$ down to roughly $\sqrt{b} \approx 6$. Leela's
+answer --- ask a network which moves are worth the visit --- is a different and, in the
+positions this project cares about, more selective attack on the same quantity.
+\end{keyidea}
+
+\section{Minimax: the correct answer, if you could afford it}
+
+Before improving on brute force, be precise about what brute force computes.
+
+Chess is a two-player game with strictly opposed interests. If I score a position from
+White's point of view, then White wants the score high and Black wants it low. Suppose we
+can evaluate leaf positions somehow (that is Question~1; assume it for now). Then the value
+of an internal node is defined recursively:
+
+\begin{equation}
+  \label{eq:minimax}
+  V(s) \;=\;
+  \begin{cases}
+    f(s), & \text{if $s$ is a leaf (we stop here)},\\[4pt]
+    \max_{a} V(s\!\cdot\!a), & \text{if White is to move at $s$},\\[4pt]
+    \min_{a} V(s\!\cdot\!a), & \text{if Black is to move at $s$},
+  \end{cases}
+\end{equation}
+where $s\!\cdot\!a$ means "the position after playing move $a$ in position $s$". This is
+\textbf{minimax}: it assumes both sides play the best move available inside the part of the
+tree we looked at.
+
+\begin{worked}{minimax by hand}
+White to move at the root, two plies deep, two moves each. Leaf evaluations (in pawns, from
+White's point of view) are \emph{invented for the arithmetic}:
+
+\begin{center}
+\begin{tikzpicture}[level distance=13mm, sibling distance=22mm,
+   every node/.style={font=\small},
+   sq/.style={draw, rectangle, minimum width=8mm, minimum height=5mm, inner sep=1pt},
+   leaf/.style={draw, rectangle, fill=black!4, minimum width=8mm, minimum height=5mm, inner sep=1pt}]
+\node[sq, fill=BuildBlue!12] (root) {root, W}
+  child {node[sq] (A) {$A$, B}
+    child {node[leaf] {$+3$}}
+    child {node[leaf] {$-1$}}}
+  child {node[sq] (B) {$B$, B}
+    child {node[leaf] {$+8$}}
+    child {node[leaf] {$+2$}}};
+\end{tikzpicture}
+\end{center}
+
+Work from the bottom up.
+\begin{itemize}
+\item Node $A$: \emph{Black} to move, so Black takes the minimum of $\{+3,-1\}$: $V(A) = -1$.
+\item Node $B$: Black takes the minimum of $\{+8,+2\}$: $V(B) = +2$.
+\item Root: \emph{White} to move, takes the maximum of $\{-1,+2\}$: $V(\text{root}) = +2$,
+  achieved by playing $B$.
+\end{itemize}
+
+Notice what just happened at node $B$: the $+8$ leaf --- the most attractive number on the
+board --- had \emph{no influence whatsoever}. Black simply would not go there. A very
+common human error, and the one minimax is built to prevent, is letting a line's best-case
+leaf colour your judgement of the line. The value of a move is what the opponent will
+\emph{allow}, not what you hope for.
+\end{worked}
+
+\subsection{The negamax trick (you will need it in Chapter~\ref{ch:uct})}
+
+Writing separate \texttt{max} and \texttt{min} cases is clumsy, and it becomes an actual bug
+factory later when values flow up a Monte-Carlo tree. The standard fix is to score every
+position \textbf{from the point of view of the side to move} instead of always from White's.
+Then both players are maximisers, and the only thing that happens when you cross a ply
+boundary is a change of sign:
+
+\begin{equation}
+  \label{eq:negamax}
+  V(s) \;=\; \max_{a}\;\bigl[-\,V(s\!\cdot\!a)\bigr].
+\end{equation}
+
+Read it aloud: \emph{my value is the best I can do, where "good for me" is "bad for the
+person who moves next".} Check it against the worked example: if $V(A) = -1$ from White's
+view and it is Black to move at $A$, then from Black's own point of view $A$ is worth $+1$;
+White's root value through $A$ is $-(+1) = -1$. Same answer, one rule.
+
+\begin{pitfall}
+This sign flip is responsible for a large fraction of all bugs in tree-search code, and for
+a large fraction of all confusion when reading engine output. Leela's $Q$ values are
+side-to-move-relative: a $Q$ of $+0.9$ in a node where Black is to move means \emph{Black}
+is winning. Chapter~\ref{ch:byhand} makes you flip signs by hand thirty-odd times, on
+purpose, until it stops being a thing you have to think about.
+\end{pitfall}
+
+\section{Alpha--beta: proving you do not need to look}
+
+Minimax visits every leaf. Alpha--beta pruning gets the identical answer while skipping
+large parts of the tree, using one observation: \emph{as soon as a line is proven bad enough
+that the opponent will never allow it, stop analysing it}. You do this at the board already.
+
+\begin{worked}{a cutoff, in chess words and in numbers}
+White to move; two candidate moves, $A$ and $B$.
+\begin{enumerate}
+\item You analyse $A$ fully and conclude it gives $+2$. So you now have a guarantee: the
+  root is worth \emph{at least} $+2$. Call that guarantee $\alpha = +2$.
+\item You start on $B$ and look at Black's first reply $B_1$, which gives $+1$.
+\item Stop. Black chooses at $B$, so $V(B) \le +1$. Black already has a way to hold $B$ to
+  $+1$, which is worse for you than the $+2$ you have banked. Whatever Black's \emph{other}
+  replies to $B$ do, they can only lower $V(B)$ further. So $B$ can never beat $A$, and the
+  remaining replies to $B$ --- possibly millions of positions --- need never be examined.
+\end{enumerate}
+In chess: \emph{"I don't need to check the rest of this line; he has a good answer already."}
+\end{worked}
+
+\begin{established}
+Alpha--beta returns exactly the same value as full minimax --- it prunes only branches that
+provably cannot affect the root. With perfect move ordering it examines about $b^{d/2}$
+leaves instead of $b^{d}$, i.e.\ the effective branching factor drops to $\sqrt{b}$
+(Knuth \& Moore, 1975). With $b=31$, that is $b_{\text{eff}} \approx 5.6$: the difference
+between depth 8 and depth 16 on the same hardware.
+\end{established}
+
+Two consequences worth carrying forward:
+
+\begin{enumerate}
+\item \textbf{Alpha--beta's power comes from move ordering.} The $\sqrt{b}$ result assumes
+  you try the best move first. Classical engines therefore spend enormous effort on
+  \emph{move-ordering heuristics} (try captures first, try the move that worked in a
+  sibling node, etc.). Those heuristics are hand-written guesses about which move is good
+  --- which is to say: \emph{classical engines already had a policy, they just wrote it by
+  hand.} Leela's policy head is the learned version of exactly this. It is not a new kind of
+  component; it is an old component that stopped being hand-written.
+\item \textbf{Alpha--beta is all-or-nothing.} A branch is either searched or cut. There is
+  no notion of "spend 3\% of my effort on this suspicious-looking move". Monte-Carlo search
+  in Part~\textsc{ii} replaces that binary with a \emph{budget allocation}, and that
+  difference is what makes Leela's search readable as a statement of interest --- the visit
+  counts tell you how seriously each plan was taken.
+\end{enumerate}
+
+\section{The classical answer to Question 1: a hand-written formula}
+
+Now Question~1. How did engines score a leaf before neural networks? By adding up features:
+
+\begin{equation}
+  \label{eq:handeval}
+  f(s) \;=\; \sum_{i=1}^{k} w_i\,\phi_i(s),
+\end{equation}
+where each $\phi_i$ is a \textbf{feature} --- a countable property of the position --- and
+$w_i$ is a hand-chosen \textbf{weight} saying how much that property is worth.
+
+\begin{worked}{a complete (bad) evaluation function}
+The simplest usable evaluation is material only, with the classical values.
+\[
+\begin{aligned}
+\phi_1 &= (\text{White pawns}) - (\text{Black pawns}),   & w_1 &= 1.0\\
+\phi_2 &= (\text{White knights}) - (\text{Black knights}),& w_2 &= 3.0\\
+\phi_3 &= (\text{White bishops}) - (\text{Black bishops}),& w_3 &= 3.2\\
+\phi_4 &= (\text{White rooks}) - (\text{Black rooks}),   & w_4 &= 5.0\\
+\phi_5 &= (\text{White queens}) - (\text{Black queens}), & w_5 &= 9.0
+\end{aligned}
+\]
+In a position where White is a knight up for two pawns:
+$\phi_1 = -2$, $\phi_2 = +1$, rest zero, so
+\[
+f(s) = 1.0(-2) + 3.0(+1) = +1.0 .
+\]
+"White is a pawn better." A real classical evaluation adds dozens more terms --- passed
+pawns, king safety, rook on an open file, bishop pair, mobility --- each with a weight
+someone tuned. Stockfish's hand-written evaluation, before it went neural, had hundreds.
+\end{worked}
+
+Equation~\eqref{eq:handeval} is worth staring at, because \textbf{the neural network in
+Part~\textsc{iv} is the same equation}. Really: the value head is $f(s) = \sum_i w_i
+\phi_i(s)$ where the $\phi_i$ are computed by the layers below rather than written by a
+person, and the $w_i$ are found by gradient descent rather than tuned by hand.
+Chapter~\ref{ch:learned} makes that transition one step at a time. Nothing alien arrives.
+
+\subsection{The two things a hand-written formula cannot do}
+
+\begin{enumerate}
+\item \textbf{It cannot represent what nobody thought to write down.} Every $\phi_i$ exists
+  because a human noticed the pattern and coded a detector. "The dark squares around his
+  king are permanently weak because the bishop that guarded them was traded and the pawn
+  structure cannot repair it" is one feature to a strong player, and roughly no feature at
+  all to a formula --- there is no counter for it.
+\item \textbf{Its terms are added, so it cannot represent \emph{it depends}.} A passed pawn
+  on d5 is worth a great deal in one structure and nothing in another; a knight on the rim
+  is bad, except when it is heading for f5. Equation~\eqref{eq:handeval} scores each feature
+  in isolation and sums. Interactions have to be hand-coded as yet more special-case terms,
+  and the number of interactions explodes faster than anyone can write them.
+\end{enumerate}
+
+Compensation for sacrificed material is where both failures bite at once, which is exactly
+your interest in this project: a sacrifice is precisely a position where the material term
+is loud and wrong, and the compensating factors are diffuse, interacting, and unnamed.
+
+\begin{keyidea}
+Both of Leela's departures are attacks on these limits. The network learns the features
+instead of being told them (fixing failure 1), and its layers multiply and gate information
+rather than merely summing it (fixing failure 2). Chapter~\ref{ch:attention} is precisely
+the story of how "it depends on what else is on the board" becomes an arithmetic operation.
+\end{keyidea}
+
+\section{What is actually in \texttt{engine/}}
+
+To keep this concrete, here is the object this book is about, as it exists on your disk.
+
+\begin{repobox}[title={in this repository}]
+\begin{itemize}
+\item \texttt{engine/lc0.exe} --- the search. A C++ program, version 0.32.1. It contains no
+  chess knowledge beyond the rules: it builds and walks a tree
+  (Chapters~\ref{ch:uct}--\ref{ch:engineering}).
+\item \texttt{engine/BT3-768x15x24h-swa-2790000.pb.gz} --- a network. 15 transformer layers,
+  768-dimensional square embeddings, 24 attention heads (Chapters~\ref{ch:attention},
+  \ref{ch:heads}).
+\item \texttt{engine/791556.pb.gz} --- a smaller, faster network. All the real numbers in
+  this book come from this one, because it runs on this machine's CPU in seconds rather
+  than minutes.
+\item \texttt{engine/stockfish/} --- Stockfish 16.1, used in this book only as an
+  independent referee for chess claims.
+\end{itemize}
+\end{repobox}
+
+The split matters and is worth saying once plainly: \textbf{\texttt{lc0.exe} without a
+network file cannot play chess at all}, and the network without \texttt{lc0.exe} plays about
+as well as a strong club player glancing at a board for a tenth of a second. The engine you
+know is the pair. Part~\textsc{ii} is the first half; Part~\textsc{iv} is the second;
+Chapter~\ref{ch:byhand} is where you watch them talk to each other.
+
+\begin{exercises}
+
+\exhead[warm-up]{ch1:treesize} Using $b = 31.35$ (your corpus mean), how many positions are there at
+depth 5? At depth 7? Roughly how many times bigger is depth 7 than depth 5, and why is that
+ratio not a coincidence?
+
+\exhead[the hardware fallacy]{ch1:hardware} A machine evaluates $2\times10^{7}$ positions per second and
+searches to depth 9 in a certain time. You buy hardware $64\times$ faster. To what depth can
+you now search in the same time? Show the calculation.
+
+\exhead[branching factor in the endgame]{ch1:endgameb} Your corpus gives $b = 32.5$ in the middlegame and
+$b = 15.8$ in the endgame. For a fixed budget of $10^{9}$ leaf evaluations, how deep can
+exhaustive search go in each? Comment on why engine analysis "feels" so much more definite
+in endgames.
+
+\exhead[minimax]{ch1:minimax} White to move. Root has three children $A$, $B$, $C$ (Black to move at
+each). Their children's leaf values, from White's point of view, are
+$A: \{+1, +6, +2\}$, $B: \{+3, +3, +4\}$, $C: \{+9, -2, +7\}$.
+Compute $V(A), V(B), V(C)$ and the root value, and give White's best move. Which leaf is the
+largest number in the whole tree, and does it matter?
+
+\exhead[negamax]{ch1:negamax} Redo the previous exercise using Equation~\eqref{eq:negamax}, i.e.\ with
+every value expressed from the point of view of the player to move at that node. Write down
+each node's value in that convention and confirm you get the same best move.
+
+\exhead[alpha--beta by hand]{ch1:alphabeta} Take the tree from Exercise~\ref{ex:ch1:minimax}, searched
+left to right ($A$ then $B$ then $C$; within each node, the leaves in the order listed).
+After finishing $A$, what is $\alpha$? Walk through $B$ and $C$ and mark every leaf that
+alpha--beta can skip. How many of the 9 leaves did you have to look at?
+
+\exhead[ordering matters]{ch1:ordering} Same tree, but now search the children in the order $C$, $B$, $A$.
+How many leaves are examined? What does the difference tell you about why classical engines
+invest so heavily in move-ordering heuristics --- and what the learned equivalent of a
+move-ordering heuristic is called in Leela?
+
+\exhead[writing an evaluation]{ch1:evalfeature} Extend the material-only $f(s)$ of the worked example with
+one positional feature of your own choosing (say, $\phi_6 =$ number of White rooks on open
+files minus the same for Black). Pick a weight. Now describe, in one sentence each, two
+different positions where your feature gives the wrong answer, and say which of the two
+failure modes of §1.5.1 each one is.
+
+\exhead[the compensation problem]{ch1:compensation} In one paragraph, explain why a piece sacrifice for a
+long-term attack is the hardest case for Equation~\eqref{eq:handeval}, referring to both
+failure modes. Keep the chess vague and the argument sharp --- this is a statement about the
+\emph{form} of the equation, not about any particular sacrifice.
+
+\exhead[looking ahead]{ch1:guess} Leela examines roughly 800--2{,}000 positions to choose a move in the
+configuration this project uses, while a classical engine examines tens of millions. Before
+reading on, write down your best guess at how that can possibly be competitive. Keep your
+answer; you will check it against Chapter~\ref{ch:puct}.
+
+\end{exercises}

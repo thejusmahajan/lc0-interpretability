@@ -1,0 +1,90 @@
+{
+ "trappedPiece": {
+  "pool": 29564,
+  "quiet_pct": 83.2
+ },
+ "quietMove": {
+  "pool": 58586,
+  "quiet_pct": 75.1
+ },
+ "pawnEndgame": {
+  "pool": 53406,
+  "quiet_pct": 73.4
+ },
+ "zugzwang": {
+  "pool": 16355,
+  "quiet_pct": 64.9
+ },
+ "bishopEndgame": {
+  "pool": 21083,
+  "quiet_pct": 62.9
+ },
+ "knightEndgame": {
+  "pool": 12117,
+  "quiet_pct": 53.8
+ },
+ "promotion": {
+  "pool": 33642,
+  "quiet_pct": 50.5
+ },
+ "defensiveMove": {
+  "pool": 94647,
+  "quiet_pct": 50.1
+ },
+ "advancedPawn": {
+  "pool": 98791,
+  "quiet_pct": 48.1
+ },
+ "rookEndgame": {
+  "pool": 65194,
+  "quiet_pct": 37.7
+ },
+ "skewer": {
+  "pool": 28645,
+  "quiet_pct": 25.9
+ },
+ "pin": {
+  "pool": 110137,
+  "quiet_pct": 25.3
+ },
+ "clearance": {
+  "pool": 23485,
+  "quiet_pct": 20.0
+ },
+ "fork": {
+  "pool": 172026,
+  "quiet_pct": 15.8
+ },
+ "discoveredAttack": {
+  "pool": 81514,
+  "quiet_pct": 10.8
+ },
+ "capturingDefender": {
+  "pool": 14585,
+  "quiet_pct": 10.6
+ },
+ "deflection": {
+  "pool": 73639,
+  "quiet_pct": 9.0
+ },
+ "intermezzo": {
+  "pool": 26633,
+  "quiet_pct": 8.2
+ },
+ "sacrifice": {
+  "pool": 143290,
+  "quiet_pct": 7.7
+ },
+ "attraction": {
+  "pool": 81755,
+  "quiet_pct": 3.1
+ },
+ "mateIn2": {
+  "pool": 99809,
+  "quiet_pct": 1.5
+ },
+ "hangingPiece": {
+  "pool": 48605,
+  "quiet_pct": 0.0
+ }
+}

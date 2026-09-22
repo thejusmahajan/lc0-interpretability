@@ -1,0 +1,301 @@
+\chapter{From machines to trees: UCT and the sign that flips}
+\label{ch:uct}
+
+\begin{objectives}
+\begin{itemize}
+\item Turn a single bandit problem into a tree of bandit problems, and state the four phases
+  of a Monte-Carlo tree search iteration.
+\item Perform backpropagation with correct sign flips, by hand, and explain why $Q$ in a
+  Black-to-move node being $+0.9$ means Black is winning.
+\item Explain why Leela evaluates a leaf with one network call instead of playing the game
+  out at random, and what was wrong with the random version.
+\item Compute why UCT without prior knowledge cannot function at chess's branching factor
+  --- the argument that forces the next chapter.
+\end{itemize}
+\end{objectives}
+
+\section{Bandits all the way down}
+
+Chapter~\ref{ch:manymachines} solved one decision: given $K$ options with unknown values,
+how do you spend $T$ pulls? A chess position is exactly that decision --- and so is every
+position it leads to.
+
+\begin{keyidea}
+\textbf{A search tree is a bandit problem at every node.} At the root you must choose among
+your legal moves. Whichever you choose, you arrive at a position where your \emph{opponent}
+faces the same kind of choice, and so on. UCT (Kocsis \& Szepesv\'ari, 2006) is the
+observation that you can run UCB1 at every node simultaneously, and that the whole thing
+coheres: the value estimate at a node is fed by the estimates below it.
+\end{keyidea}
+
+The vocabulary, fixed once:
+
+\begin{notationbox}
+A \textbf{node} is a position the search has stored. An \textbf{edge} is a legal move out of
+a stored position. Each edge carries $N(s,a)$ (visits) and $W(s,a)$ (accumulated value), with
+$Q(s,a) = W(s,a)/N(s,a)$. A \textbf{leaf} is a node in the tree with no children yet. The
+\textbf{root} is the position we must move in. $N(s) = \sum_b N(s,b)$ is the node's total
+visits.
+\end{notationbox}
+
+\section{One iteration, four phases}
+
+Every Monte-Carlo tree search --- Leela's included --- repeats the same four-phase cycle
+until the budget runs out. One cycle adds exactly one new node to the tree.
+
+\begin{center}
+\begin{tikzpicture}[
+   nd/.style={circle, draw, minimum size=7mm, inner sep=0pt, font=\footnotesize},
+   newnd/.style={nd, fill=IdeaGreen!20, draw=IdeaGreen, thick},
+   lbl/.style={font=\footnotesize\itshape, align=center},
+   x=17mm, y=-14mm]
+% tree
+\node[nd, fill=BuildBlue!15] (r) at (0,0) {$s_0$};
+\node[nd] (a) at (-1.1,1) {$s_1$};
+\node[nd] (b) at (0.4,1) {};
+\node[nd] (c) at (1.5,1) {};
+\node[nd] (d) at (-1.7,2) {};
+\node[nd] (e) at (-0.5,2) {$s_2$};
+\node[newnd] (f) at (-0.1,3) {$s_3$};
+\draw[very thick, PitfallRed] (r) -- (a);
+\draw[very thick, PitfallRed] (a) -- (e);
+\draw[very thick, IdeaGreen, dashed] (e) -- (f);
+\draw (r) -- (b); \draw (r) -- (c); \draw (a) -- (d);
+% annotations
+\node[lbl, right=22mm of r, anchor=west] (t1)
+  {\textbf{1. Selection.} From the root, repeatedly take the\\ highest-scoring edge
+   ($Q+U$) until you reach a node\\ whose chosen move has no child yet.};
+\node[lbl, below=6mm of t1.south west, anchor=north west] (t2)
+  {\textbf{2. Expansion.} Create that child, $s_3$. Ask the\\ network for its policy over
+   $s_3$'s legal moves.};
+\node[lbl, below=4mm of t2.south west, anchor=north west] (t3)
+  {\textbf{3. Evaluation.} The same network call returns\\ $V(s_3)$ --- one forward pass, no
+   rollout.};
+\node[lbl, below=4mm of t3.south west, anchor=north west] (t4)
+  {\textbf{4. Backpropagation.} Walk back up the red path,\\ adding $V(s_3)$ to every $W$
+   and $1$ to every $N$,\\ \emph{flipping the sign at each ply}.};
+\end{tikzpicture}
+\end{center}
+
+The remarkable thing about this loop is how little it contains. There is no chess in it
+whatsoever except the move generator. All the chess lives in the network call in phase 3;
+the loop's only job is deciding \emph{which} position gets that call next. This is why
+Chapter~\ref{ch:problem} insisted that \texttt{lc0.exe} has no chess knowledge --- it is
+literally this loop, plus engineering.
+
+\subsection{Phase 3, and what Monte-Carlo used to mean}
+
+The name "Monte-Carlo" is a historical fossil, and it misleads people constantly.
+
+In the original method (Go programs of the mid-2000s), phase 3 was a \textbf{rollout}: from
+the new leaf, play random legal moves until the game ends, and score the result $+1$, $0$ or
+$-1$. That is where the randomness --- and the casino name --- came from. Averaging thousands
+of random games gave a shockingly usable estimate in Go.
+
+It is a disaster in chess, for a reason worth stating precisely: \textbf{chess outcomes are
+determined by short forcing sequences, and random play destroys them}. From a position where
+you are a queen up, random play throws the queen back within a few moves; from a position
+with mate in one, random play finds the mate one time in thirty. The rollout's answer is
+dominated by noise that has nothing to do with the position.
+
+\begin{established}
+AlphaGo (2016) replaced the rollout with a learned \textbf{value network}, and AlphaZero
+(2017) dropped rollouts entirely. Leela follows AlphaZero: phase 3 is one forward pass
+returning $(P, V)$, and no game is ever played out. The statistics are still Monte-Carlo ---
+we are averaging samples --- but the samples are network evaluations of concrete positions
+chosen deliberately, not random games.
+\end{established}
+
+\begin{pitfall}
+Because of this, the phrase "Leela plays out thousands of games in its head" --- common in
+chess commentary and present in the earlier draft guide this book replaces --- is simply
+false. Leela never plays a game out. At 800 nodes it has looked at 800 positions, evaluated
+each once, and averaged. If your tool ever says "simulations", make sure the user cannot
+infer rollouts from it.
+\end{pitfall}
+
+\section{Backpropagation and the sign flip}
+
+Phase 4 is where the bugs live. A value is always \emph{from the point of view of the player
+to move at that node} (Chapter~\ref{ch:problem}, negamax). So as the value walks up the tree,
+it must alternate sign at every ply.
+
+\begin{equation}
+  \label{eq:backup}
+  \text{for each edge } (s,a) \text{ on the path, from the leaf upwards:}\quad
+  N(s,a) \mathrel{+}= 1, \qquad W(s,a) \mathrel{+}= v,\qquad v \leftarrow -v .
+\end{equation}
+
+\begin{worked}{backing up a value through three plies}
+The search selected: root ($s_0$, White to move) $\to$ move $a$ $\to$ $s_1$ (Black to move)
+$\to$ move $b$ $\to$ $s_2$ (White to move) $\to$ move $c$ $\to$ new leaf $s_3$ (Black to
+move). The network evaluates $s_3$ at $V(s_3) = -0.6$ --- \emph{Black to move there, and
+Black is worse}, since values are always for the side to move.
+
+Now walk up, flipping each time:
+\begin{center}
+\begin{tabular}{@{}lllr@{}}
+\toprule
+Edge & Whose node & Value added to $W$ & Meaning \\
+\midrule
+$(s_2, c)$ & White to move at $s_2$ & $-(-0.6) = +0.6$ & good for White \\
+$(s_1, b)$ & Black to move at $s_1$ & $-(+0.6) = -0.6$ & bad for Black \\
+$(s_0, a)$ & White to move at $s_0$ & $-(-0.6) = +0.6$ & good for White \\
+\bottomrule
+\end{tabular}
+\end{center}
+Every $N$ on the path also increments by 1. Sanity check the top and bottom: a position that
+is bad for Black-to-move must be good for White at the root, and indeed both White nodes
+recorded $+0.6$. If you ever compute a chain where a single leaf makes both sides happy, you
+have a sign bug.
+\end{worked}
+
+\begin{keyidea}
+\textbf{$Q$ is always relative to the side to move at the parent node.} When you read
+$\texttt{Q: 0.94}$ on an edge out of a node where Black is to move, it means the move is
+excellent \emph{for Black}. This trips up everyone reading engine output for the first time,
+and it is the single most common source of an evaluation displayed with the wrong sign in a
+chess GUI.
+\end{keyidea}
+
+We can verify the convention on real output rather than take my word for it:
+
+\begin{realdata}[title={Real engine output: the same position from both sides}]
+The king-and-pawn position (White Ke6, pawn e5, Black Ke8) evaluated with White to move and
+then with Black to move --- the identical board, one tempo apart:
+\begin{center}
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+ & \texttt{WL} at root & best move & Stockfish d30 \\
+\midrule
+White to move & $+0.942$ & Kd6 & mate in 12 for White \\
+Black to move & $-0.948$ & Kf8 & mate in 16 for White \\
+\bottomrule
+\end{tabular}
+\end{center}
+Both numbers say "White is winning". The first says it as $+0.94$ (White to move, White
+happy); the second says it as $-0.95$ (Black to move, Black unhappy). The sign flipped
+because the mover changed, not because anything on the board did.
+\end{realdata}
+
+\section{UCT: UCB1 at every node}
+
+Put UCB1 (Equation~\eqref{eq:ucb1}) on each node and you have UCT. The selection rule at
+node $s$ is
+\begin{equation}
+  \label{eq:uct}
+  a^{*} \;=\; \argmax_{a}\left[\, Q(s,a) \;+\; c\sqrt{\frac{\ln N(s)}{N(s,a)}} \,\right],
+\end{equation}
+applied repeatedly from the root until you fall off the bottom of the tree, which is phase 1.
+An unvisited edge has $N(s,a) = 0$ and therefore infinite bonus, so \emph{every legal move at
+a node must be tried once before any is tried twice}.
+
+That last sentence is the whole problem.
+
+\subsection{Why UCT alone cannot play chess}
+
+\begin{worked}{the cost of ``try everything once''}
+Your corpus says $b \approx 31$ legal moves per position (Chapter~\ref{ch:problem}). UCT must
+visit every child once before deepening anywhere. So:
+
+\begin{center}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+To have looked once at every line of depth\dots & costs (nodes) & \\
+\midrule
+1 ply  & $31$      & one visit each to your own moves \\
+2 ply  & $961$     & \\
+3 ply  & $29{,}791$ & \\
+4 ply  & $923{,}521$ & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A search budget of 800 nodes --- the kind this project uses for a live board --- cannot
+complete \emph{two plies}. It would spend its first 31 visits on the root's children,
+including every move that hangs a queen, and then have 769 left to distribute over a tree
+whose second layer alone needs 961.
+\end{worked}
+
+And the visits it does spend are spent stupidly. UCB1 has no way of knowing that
+$1.\text{g4}$ deserves less attention than $1.\text{e4}$ \emph{before measuring it}. It must
+pay a full visit to discover what any club player knows at a glance.
+
+\begin{keyidea}
+UCT's fatal assumption is that \textbf{all options start equal}. That is right for slot
+machines --- they are anonymous --- and catastrophically wrong for chess moves, which come
+with enormous amounts of prior evidence about which ones are worth examining. The fix is not
+a better bonus. The fix is to \textbf{stop starting from ignorance}.
+\end{keyidea}
+
+\subsection{What the fix has to look like}
+
+Before turning the page, notice how strong the constraints are on any repair:
+
+\begin{enumerate}
+\item It must let the search \emph{skip} moves entirely at low visit counts --- with 800
+  nodes and 31 legal moves, most moves must receive zero visits, forever.
+\item It must nevertheless be able to \emph{come back} to a skipped move if the favoured ones
+  fail. A hard "only look at the top 3" cutoff cannot do this, and would make the engine
+  blind exactly where blindness is fatal.
+\item It must degrade gracefully into UCT-like behaviour as visits grow, so that with enough
+  compute the prior's opinion can be overruled by measurement.
+\end{enumerate}
+
+Requirement 2 is the interesting one, and it is the reason the answer is not simply
+"pre-filter the move list". Chapter~\ref{ch:puct} builds a bonus that satisfies all three ---
+and the move that comes back from the dead in our real data is a queen sacrifice that the
+network initially rated at $1.6\%$.
+
+\begin{repobox}[title={in this repository}]
+The four phases are the loop inside \texttt{engine/lc0.exe}; you never see them directly, but
+every number in \texttt{--verbose-move-stats} is produced by them. When this project's
+backend requests a search and reads back visit counts and principal variations, it is reading
+the state of the tree that this loop left behind.
+\end{repobox}
+
+\begin{exercises}
+
+\exhead[the loop]{ch5:loop} Write out the four phases in your own words, in one sentence
+each, without looking. Then say which phase the neural network participates in, and how many
+times it is called per iteration.
+
+\exhead[sign flips]{ch5:signs} A selection path runs root (White) $\to s_1$ (Black)
+$\to s_2$ (White) $\to s_3$ (Black) $\to$ new leaf $s_4$ (White), and the network reports
+$V(s_4) = +0.35$. Write out the value added to $W$ on each of the four edges, with signs, and
+say in words what the root edge's contribution means.
+
+\exhead[reading a Q]{ch5:readq} An edge out of a Black-to-move node shows
+\texttt{N: 210 (Q: 0.77)}. Is Black doing well or badly? A GUI displays this as "$+0.77$
+White". What has gone wrong, and where in Equation~\eqref{eq:backup} did it go wrong?
+
+\exhead[rollouts]{ch5:rollouts} Estimate, roughly, the probability that a random legal
+continuation from a position with mate in one actually plays the mate, assuming 31 legal
+moves. Then estimate the probability that a 40-ply random rollout preserves a decisive queen
+advantage. Use these to argue in two sentences why rollouts died.
+
+\exhead[UCT's cost]{ch5:uctcost} With $b = 31$, how many nodes does UCT need before it has
+visited every 3-ply line once? Express the answer as a multiple of an 800-node budget. Now
+redo it for the endgame branching factor $b = 15.8$ from your corpus, and comment.
+
+\exhead[the first sweep]{ch5:firstsweep} Under pure UCT with 800 nodes at $b=31$, what
+fraction of the budget is consumed just by giving every root move its first visit? If 20 of
+those 31 moves are obviously bad to a club player, how much of the budget was wasted, and
+what would you have to know in advance to avoid the waste?
+
+\exhead[designing the repair]{ch5:designfix} Before reading Chapter~\ref{ch:puct}: propose a
+modification of Equation~\eqref{eq:uct} that uses a prior probability $P(a\given s)$. Write
+down your formula. Then check it against the three requirements in §5.5.2 and note which
+ones it fails. (Keep this; you will compare it with the real answer.)
+
+\exhead[the hard cutoff]{ch5:cutoff} Suppose you implement "only ever search the top 3 moves
+by prior". Describe a concrete chess situation in which this loses a game outright, and
+explain which of the three requirements it violates. Why is this failure mode particularly
+dangerous for a \emph{training} tool as opposed to a playing engine?
+
+\exhead[budget and depth]{ch5:budgetdepth} If a search concentrates $90\%$ of its visits on
+one move at each ply, how deep can 800 nodes reach along the main line? Compare with the UCT
+answer from Exercise~\ref{ex:ch5:uctcost}. This is a preview of the actual mechanism ---
+state in one sentence what the search must be buying with that concentration.
+
+\end{exercises}

@@ -1,0 +1,323 @@
+\chapter{The details that make it work}
+\label{ch:engineering}
+
+\begin{objectives}
+\begin{itemize}
+\item Explain why a search that evaluates one position at a time wastes almost all of a GPU,
+  and what virtual loss does about it.
+\item Describe what a collision is, and recognise its fingerprints in engine output ---
+  including in this book's own data.
+\item Say what Dirichlet noise is for, why it must be \emph{off} in an analysis tool, and
+  what happens to reproducibility if it is not.
+\item Distinguish a sampled value from a proven one, and explain the Morphy search stopping
+  at 188 of a requested 6400 nodes.
+\item List the conditions under which a Leela search is exactly reproducible.
+\end{itemize}
+\end{objectives}
+
+\section{The problem: the search is serial, the hardware is parallel}
+
+Chapter~\ref{ch:byhand}'s loop is strictly sequential. Select a leaf, evaluate it, back the
+value up, and only then can you select the next leaf --- because the next selection depends
+on the numbers the last backup just changed.
+
+That is a disaster for the hardware. A GPU evaluating one position at a time runs at a few
+percent of its capacity: the position is tiny, the network is huge, and almost all the time
+goes into moving weights around rather than computing. Evaluating 256 positions at once costs
+barely more wall-clock time than evaluating one.
+
+\begin{keyidea}
+The central engineering tension in every neural MCTS engine: \textbf{the algorithm wants to
+evaluate one position at a time, and the hardware wants hundreds}. Everything in this chapter
+is a consequence of that sentence.
+\end{keyidea}
+
+\subsection{Virtual loss}
+
+The fix is to select several leaves before evaluating any of them. But naive repetition
+selects the \emph{same} leaf every time --- nothing changed between selections, so the argmax
+is unchanged.
+
+\textbf{Virtual loss} solves this by pretending, temporarily, that a selected leaf came back
+with the worst possible result. When a path is selected but not yet evaluated, add to each
+edge on it
+\[
+  N(s,a) \mathrel{+}= 1, \qquad W(s,a) \mathrel{-}= 1 ,
+\]
+i.e.\ book a fictitious loss. Now that path looks worse, so the next selection goes somewhere
+else. When the real evaluation arrives, the fiction is removed and the true value applied.
+
+\begin{worked}{virtual loss in numbers}
+An edge has $N = 9$, $W = 7.2$, so $Q = 0.800$. A search thread selects through it:
+\[
+  N \to 10,\quad W \to 6.2,\quad Q \to 0.620 .
+\]
+A drop of $0.18$ --- enough to make a rival edge more attractive, so the second thread
+explores elsewhere. When the real value $v = +0.9$ comes back, we undo and apply:
+\[
+  N \to 10, \qquad W \to 7.2 - (-1) + 0.9 \;\text{i.e.}\; 8.1, \qquad Q = 0.810 .
+\]
+\emph{(Illustrative numbers.)} Note the size of the effect depends on how many visits the
+edge already has: on an edge with $N = 500$ a virtual loss moves $Q$ by $0.004$ and changes
+nothing. Virtual loss diversifies exactly where the tree is thin, which is where
+diversification is wanted.
+\end{worked}
+
+\subsection{Collisions}
+
+Sometimes selection still lands on a leaf that is already queued for evaluation. That is a
+\textbf{collision}. The engine can either give up that iteration (wasting it) or record it
+and move on. Leela counts collision events, caps them, and by default tolerates a good many.
+
+Collisions explain something visible in this book's own data:
+
+\begin{realdata}[title={Real engine output: requested nodes versus tree size}]
+Every search in this book was run with collision handling deliberately turned down
+(\texttt{--max-collision-events=1 --max-collision-visits=1 --minibatch-size=1 --threads=1})
+so that the search would be strictly sequential and reproducible for the hand simulation.
+The cost shows up as a gap between the node budget requested and the tree actually built:
+\begin{center}
+\begin{tabular}{@{}rrr@{}}
+\toprule
+Position & \texttt{go nodes} & resulting root visits \\
+\midrule
+K+P endgame & 800  & 620 \\
+Initial position & 1600 & 1493 \\
+Morphy position & 400  & 182 \\
+\bottomrule
+\end{tabular}
+\end{center}
+The Morphy row has a second cause as well --- see §8.5.
+\end{realdata}
+
+\begin{pitfall}
+If your tool reports "analysed at 800 nodes", check whether it means \emph{requested} or
+\emph{achieved}. The two differ, sometimes by a factor of two, and the difference depends on
+settings that have nothing to do with the position. Report the tree size, which is what the
+statistics in Chapter~\ref{ch:onemachine} actually depend on.
+\end{pitfall}
+
+\section{The evaluation cache}
+
+The same position arrives repeatedly --- through transpositions, through repeated visits to
+the same leaf, across successive searches in the same game. Leela keeps a cache of network
+outputs keyed by position, so a repeat costs a lookup instead of a forward pass.
+
+This has a subtle consequence you have already met. The cache key includes the position
+\emph{history} (Chapter~\ref{ch:byhand}, §7.6), because the history is part of the network's
+input. Two identical boards reached by different move orders are different cache entries and
+can carry different evaluations. That is not a bug in the cache; it is a fact about the
+network's input.
+
+\begin{repobox}[title={in this repository}]
+The cache is also why "replay the same analysis and check you get the same numbers" is a
+meaningful integrity test for a pipeline --- and why it can fail spuriously if the process
+restarts between runs. If you use cache-replay as an identity gate, make sure the comparison
+is over positions supplied identically (same history), not just the same FENs.
+\end{repobox}
+
+\section{Tree reuse between moves}
+
+When you play the move the engine recommended and the opponent replies, the subtree under
+that pair of moves is still valid --- it describes exactly the position now on the board. So
+the engine re-roots: it discards the rest and keeps that subtree, complete with its visit
+counts.
+
+The practical effect is large. A search that "starts" at 800 nodes may inherit 300 from the
+previous move, so its first new node is added to a tree that already has structure. It also
+means the analysis you see is not a clean function of the position: identical positions get
+different trees depending on how the game arrived there.
+
+\begin{pitfall}
+For a \emph{training tool} this is a reproducibility hazard. Analysing a position in the flow
+of a game (with tree reuse and history) and analysing the same position cold from a FEN can
+give different numbers, sometimes different move rankings. Neither is wrong; they answer
+slightly different questions. Pick one convention for your diagnosis pipeline and record it
+in the output, so that a number can always be re-derived.
+\end{pitfall}
+
+\section{Certainty: when a value stops being an estimate}
+
+Everything in Part~\textsc{ii} treated values as samples to be averaged. But some values are
+not estimates at all: a checkmate, a stalemate, a threefold repetition, a position in a
+tablebase. These are \textbf{terminal} --- known exactly, no averaging required.
+
+Engines propagate certainty separately from the average. If \emph{any} child of a node is a
+proven win for the side to move, the node is a proven win --- and no amount of sampling
+elsewhere can change that. Leela's option \texttt{StickyEndgames} (on by default) does exactly
+this.
+
+This is what you saw at the end of Chapter~\ref{ch:puct}:
+
+\begin{realdata}[title={Real engine output: a search that stops early}]
+Morphy position, \texttt{go nodes 6400}:
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Requested nodes & 6400 \\
+Root visits when the engine answered & \textbf{188} \\
+Best move & Qb8+ ($n = 3$, $Q = 1.0000$) \\
+\bottomrule
+\end{tabular}
+\end{center}
+Once 16.Qb8+ Nxb8 17.Rd8\# was proven, there was nothing left to compute: the root is a
+proven win, and continuing would change nothing. The engine reported and stopped. Requesting
+6400 nodes produced the identical answer to requesting 1600, in identical time.
+\end{realdata}
+
+\begin{keyidea}
+A $Q$ of exactly $\pm1.000$ on a small visit count is a signature worth learning to read: it
+usually means \emph{proof}, not enthusiasm. A $Q$ of $0.997$ on a large visit count is the
+opposite --- overwhelming evidence, no proof. Your tool should not display them the same way.
+\end{keyidea}
+
+Related is \textbf{smart pruning}: if the second-best move cannot overtake the best within
+the remaining budget, stop early. This is why a Leela search sometimes returns instantly on a
+position with one obvious move --- and why "nodes searched" is not a reliable measure of how
+hard the engine worked.
+
+\section{Dirichlet noise: the setting you must not leave on}
+
+During \emph{self-play training} Leela deliberately corrupts the root policy with random
+noise:
+\begin{equation}
+  \label{eq:dirichlet}
+  P'(a\given s) \;=\; (1-\varepsilon)\,P(a \given s) \;+\; \varepsilon\,\eta_a,
+  \qquad \boldsymbol{\eta} \sim \text{Dirichlet}(\alpha),
+\end{equation}
+typically with $\varepsilon \approx 0.25$. In plain terms: replace a quarter of the policy
+with a random distribution, so that occasionally a move the network dislikes gets a serious
+look.
+
+The purpose is exploration during \emph{learning}, and it is essential: without it, a network
+that has decided a move is bad will never generate the games that could teach it otherwise.
+This is the training-time answer to the same problem the $U$ term solves at search time.
+
+\begin{pitfall}
+Noise must be \textbf{off} for analysis. With it on:
+\begin{itemize}
+\item the same position analysed twice gives different answers;
+\item the "policy" you display is not the network's opinion but a randomised version of it;
+\item any metric you compute about policy --- your policy-blindness measure, the divergence
+  index of Chapter~\ref{ch:readingtree} --- is contaminated by noise you injected yourself.
+\end{itemize}
+Leela's defaults have noise off for normal play, but training-derived configurations and
+copied command lines sometimes carry it. If your reruns of the same position disagree, this
+is the first thing to check --- and the second is thread count.
+\end{pitfall}
+
+\section{When is a search reproducible?}
+
+Determinism matters for a diagnosis pipeline: a metric you cannot recompute is a metric you
+cannot debug. Leela's search is deterministic when
+
+\begin{enumerate}
+\item there is no Dirichlet noise;
+\item temperature is zero (see below), so the move is the argmax rather than a sample;
+\item there is a single search thread --- with multiple threads, batches are assembled in a
+  race-dependent order and the tree differs run to run;
+\item the node limit is a \emph{node} limit, not a time limit (a time limit makes the tree
+  size depend on machine load);
+\item the cache and the tree start in the same state (Chapter~\ref{ch:byhand}'s runs were all
+  cold starts).
+\end{enumerate}
+
+Every search in this book satisfies all five, which is why the hand simulation could match to
+five decimals. In production you will usually give up (3) for speed, and should then treat
+small differences between runs as expected rather than as bugs.
+
+\subsection{Temperature}
+
+For the record, since it appears in configurations: when selecting the move to \emph{play}
+from the visit counts, one can either take the maximum or sample from
+\begin{equation}
+  \label{eq:temperature}
+  \pi(a) \;=\; \frac{N(s,a)^{1/\tau}}{\sum_b N(s,b)^{1/\tau}} .
+\end{equation}
+$\tau \to 0$ gives the argmax (all the weight on the most-visited move); $\tau = 1$ gives
+sampling in proportion to visits; large $\tau$ approaches uniform. Self-play uses $\tau = 1$
+for the opening moves to generate varied games, then drops to $0$. For analysis, $\tau = 0$.
+
+\begin{worked}{what temperature does to a visit distribution}
+Visits $N = (532, 451, 230, 100, 64)$ --- the real numbers from the initial position at 1600
+nodes. Total $1377$.
+\begin{center}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+ & e4 & d4 & Nf3 & c4 & g3 \\
+\midrule
+$\tau = 1$ (proportional) & 38.6\% & 32.8\% & 16.7\% & 7.3\% & 4.6\% \\
+$\tau = 0$ (argmax)       & 100\%  & 0\%    & 0\%    & 0\%   & 0\%  \\
+\bottomrule
+\end{tabular}
+\end{center}
+The $\tau=1$ row is the reason self-play games are not all identical, and --- more
+importantly for Chapter~\ref{ch:heads} --- it is the exact quantity used as the training
+target for the policy head.
+\end{worked}
+
+\section{What all this costs you as a user of the engine}
+
+A summary you can act on:
+
+\begin{center}
+\begin{tabular}{@{}lp{9.2cm}@{}}
+\toprule
+Setting & Why you care \\
+\midrule
+threads $>1$ & faster; search no longer reproducible \\
+minibatch size & bigger = faster on GPU, slightly worse per node (more virtual loss distortion) \\
+noise on & \emph{never} for analysis; silently corrupts every policy metric \\
+time limit & convenient; makes results depend on machine load \\
+tree reuse & realistic; makes a position's analysis depend on the game that reached it \\
+FEN vs move history & changes the network input (Chapter~\ref{ch:byhand}, §7.6) \\
+\texttt{StickyEndgames} & proven results override sampled ones; explains tiny-$n$ best moves \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{exercises}
+
+\exhead[virtual loss]{ch8:vloss} An edge has $N = 4$, $W = 3.2$. Compute $Q$ before a virtual
+loss, during, and after the real value $+0.7$ arrives. Then repeat for $N = 200$,
+$W = 160$. What does the comparison tell you about where virtual loss has its effect?
+
+\exhead[why not more]{ch8:vloss2} Why not apply \emph{two} units of virtual loss, or five, to
+push threads further apart? Describe the failure that follows, in terms of the quantity the
+search is trying to estimate.
+
+\exhead[collisions]{ch8:collisions} In the K+P run, 800 requested nodes produced a tree of
+620. Give two distinct explanations consistent with this chapter, and describe an experiment
+that would distinguish them.
+
+\exhead[cache and history]{ch8:cache} Two games transpose into the same position by different
+move orders. Will Leela's cache return the same evaluation for both? Justify with reference
+to §7.6, and say what this implies for a repertoire tool that stores positions as FENs.
+
+\exhead[tree reuse]{ch8:reuse} Your tool analyses move 25 of a game twice: once by stepping
+through the game, once by loading the FEN directly. List three mechanisms in this chapter
+that could make the two results differ. Which would you eliminate, and which would you simply
+document?
+
+\exhead[certainty]{ch8:certainty} Explain, in terms of §8.4, why the Morphy search answered
+after 188 nodes when asked for 6400. Then explain why the same engine, asked for 6400 nodes
+in the initial position, uses all of them.
+
+\exhead[reading a Q of 1.0]{ch8:qone} You see two lines in your output:
+\texttt{N: 5 (Q: 1.00000)} and \texttt{N: 900 (Q: 0.99312)}. Which is the stronger claim?
+Write the one-sentence display text your tool should use for each.
+
+\exhead[noise]{ch8:noise} A colleague reports that policy percentages in your tool "wobble by
+a few points between runs". Give the two most likely causes from this chapter, and the
+diagnostic that separates them. Why is this a correctness bug and not a cosmetic one for the
+policy-blindness metric specifically?
+
+\exhead[temperature]{ch8:temp} Using Equation~\eqref{eq:temperature} with the visit counts
+from §8.6.1, compute $\pi$ at $\tau = 0.5$ for e4 and g3. Is the distribution sharper or
+flatter than $\tau = 1$? State the general rule.
+
+\exhead[an audit]{ch8:audit} Write a five-item checklist your project should run before
+trusting a batch of diagnosis output, drawn only from this chapter. For each item, say what
+symptom would show up downstream if it were violated.
+
+\end{exercises}

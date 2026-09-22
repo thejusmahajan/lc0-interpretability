@@ -1,0 +1,53 @@
+% fig_c_fpu.tex -- The FPU placeholder to measured reality transition
+\begin{tikzpicture}[scale=0.90, every node/.style={font=\small}]
+  % Panel A: Before First Visit (n = 0)
+  \begin{scope}[xshift=0cm]
+    \node[font=\footnotesize\bfseries, text=NavyBlue] at (1.8, 3.7) {%
+      Panel A: Before First Visit ($n = 0$)%
+    };
+    
+    % Dashed box representing borrowed / hollow placeholder
+    \draw[NavyBlue, line width=0.9pt, dashed] (0.6, 0.6) rectangle (3.0, 3.0);
+    \node[font=\tiny\bfseries, text=NavyBlue, align=center] at (1.8, 2.1) {%
+      $Q_{\text{FPU}} = +0.97602$\\[0.4ex]
+      \scriptsize\textcolor{WorkGrey}{(Dashed / Hollow)}%
+    };
+    \node[font=\tiny\bfseries, text=WorkGrey] at (1.8, 1.2) {Borrowed from Parent};
+    
+    \node[align=center, font=\scriptsize, text=WorkGrey] at (1.8, -0.2) {%
+      \textbf{A Placeholder Guess}\\
+      No child exists yet.\\
+      No measurement has occurred.%
+    };
+  \end{scope}
+
+  % Transition arrow
+  \draw[GoldPath, line width=1.5pt, -{Stealth[length=3.5mm]}] (3.5, 1.8) -- (5.0, 1.8);
+  \node[font=\tiny\bfseries, text=GoldPath, align=center] at (4.25, 2.3) {Visit 1\\happens!};
+
+  % Panel B: After First Visit (n = 1)
+  \begin{scope}[xshift=5.8cm]
+    \node[font=\footnotesize\bfseries, text=NavyBlue] at (3.0, 3.7) {%
+      Panel B: After First Visit ($n = 1$)%
+    };
+    
+    % Old placeholder crossed out
+    \draw[WorkGrey!40, line width=0.6pt, dashed] (0.6, 0.6) rectangle (2.2, 3.0);
+    \draw[PitfallRed, line width=1.2pt] (0.6, 0.6) -- (2.2, 3.0);
+    \draw[PitfallRed, line width=1.2pt] (0.6, 3.0) -- (2.2, 0.6);
+    \node[font=\tiny\bfseries, text=PitfallRed, fill=white, inner sep=1pt, align=center] at (1.4, 1.8) {0.97602\\DISCARDED!};
+    
+    % Solid box representing new measured value
+    \fill[BuildBlue!70] (2.7, 0.6) rectangle (4.3, 3.0);
+    \draw[NavyBlue, line width=1.0pt] (2.7, 0.6) rectangle (4.3, 3.0);
+    \node[font=\tiny\bfseries, text=white, align=center] at (3.5, 2.0) {$Q = +0.96766$};
+    \node[font=\tiny\bfseries, text=white] at (3.5, 1.4) {Solid Measured};
+    
+    \node[align=center, font=\scriptsize, text=NavyBlue] at (2.5, -0.2) {%
+      \textbf{Permanent Measured Reality}\\
+      Leaf returned $x_1 = +0.96766$.\\
+      $Q = W/n = 0.96766/1$.\\[0.3ex]
+      \textbf{\textcolor{BuildBlue}{Replaced completely, never blended!}}%
+    };
+  \end{scope}
+\end{tikzpicture}

@@ -1,0 +1,15 @@
+% fig_c_iter1.tex -- S-bar strip at Iteration 1
+\begin{tikzpicture}
+  \node[anchor=west, font=\scriptsize\itshape, text=WorkGrey] at (-5.5, 4.0) {%
+    Iteration 1: Kd6 measured ($Q{=}0.96766$, $U$ halved); unvisited FPU drops to $0.75015$:%
+  };
+  \vgsbaraxis{-5.5}{5.5}{1.8}
+  \vgsbarS{-4.125}{0.96766}{0.39376}{Kd6}{meas}
+  \vgsbarS{-1.375}{0.75015}{0.77181}{Kf6}{sel}
+  \vgsbarS{1.375}{0.75015}{0.09388}{Kf5}{fpu}
+  \vgsbarS{4.125}{0.75015}{0.09179}{Kd5}{fpu}
+
+  \node[draw=GoldPath, fill=GoldPath!10, rounded corners=2pt, font=\tiny\bfseries, text=GoldPath] at (-1.375, 3.4) {%
+    \textbf{SELECTED: Kf6} ($S=1.52196$)%
+  };
+\end{tikzpicture}

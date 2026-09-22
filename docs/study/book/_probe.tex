@@ -1,0 +1,17 @@
+\documentclass[11pt,a4paper,openany]{book}
+\input{preamble}
+\begin{document}
+\chapter{Probe}
+\begin{keyidea}Test $Q(s,a)+U(s,a)$.\end{keyidea}
+\begin{worked}{a title}Body \exhead test\end{worked}
+\begin{established}Established text.\end{established}
+\begin{hypothesis}Hypothesis text.\end{hypothesis}
+\begin{attempt}{1}{first try}Body.\end{attempt}
+\begin{objectives}\begin{itemize}\item do things\end{itemize}\end{objectives}
+\chessboard[setfen=4k3/8/4K3/4P3/8/8/8/8 w - - 0 1]
+\begin{tikzpicture}[node distance=8mm]
+\node[circle,draw] (r) {root};
+\node[circle,draw,below left=of r] (a) {a};
+\draw[-{Latex}] (r)--(a);
+\end{tikzpicture}
+\end{document}

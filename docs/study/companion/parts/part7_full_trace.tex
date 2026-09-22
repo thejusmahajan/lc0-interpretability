@@ -1,0 +1,144 @@
+\chapter{The Full Trace: Four Iterations, Every Number Checkable}
+\label{ch:full_trace}
+
+Constants, so you can reproduce every line with a pocket calculator:
+\begin{align*}
+  V(\text{root}) &= 0.97602, \quad c = 1.745, \quad k = 0.33 \\
+  P(\text{Kd6}) &= 0.4513, \quad P(\text{Kf6}) = 0.4423, \quad P(\text{Kf5}) = 0.0538, \quad P(\text{Kd5}) = 0.0526 \\[1ex]
+  U(a) &= c \cdot P(a) \cdot \frac{\sqrt{N}}{1 + n(a)}, \quad N = \max(1, \text{visits from this node}) \\
+  Q_{\text{FPU}} &= Q(\text{parent}) - k \cdot \sqrt{\sum_{\text{visited}} P(a')}
+\end{align*}
+
+\section{Iteration 0: Nothing Visited Yet}
+
+Every arrow has $n = 0$, so every $Q$ is the placeholder. Nothing is visited, so the FPU reduction is $k \cdot \sqrt{0} = 0$ and the placeholder is the parent's value itself. $N = \max(1, 0) = 1$.
+
+\begin{center}
+\small
+\begin{tabular}{lcccc}
+  \toprule
+  Move $a$ & $n$ & Baseline $Q$ & Curiosity $U = 1.745 \cdot P \cdot 1 / (1+0)$ & Total $S = Q + U$ \\
+  \midrule
+  \textbf{Kd6} & 0 & 0.97602 & $1.745 \times 0.4513 = 0.78752$ & \textbf{1.76354} \hfill ($\leftarrow \max$) \\
+  \textbf{Kf6} & 0 & 0.97602 & $1.745 \times 0.4423 = 0.77181$ & 1.74783 \\
+  \textbf{Kf5} & 0 & 0.97602 & $1.745 \times 0.0538 = 0.09388$ & 1.06990 \\
+  \textbf{Kd5} & 0 & 0.97602 & $1.745 \times 0.0526 = 0.09179$ & 1.06781 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+All four $Q$ are identical, so \textbf{the policy prior alone decides the first move examined.}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\input{figures/fig_c_iter0.tex}
+\captionof{figure}{\textbf{Iteration 0 S-bar strip.} Tallest bar is Kd6 ($S = 1.76354$), selected for the first search traversal.}
+\label{fig:iter0}
+\end{minipage}
+\end{center}
+
+\begin{realdata}[Iteration 0 Execution Outcome]
+\textbf{Selected: Kd6.} Play it, evaluate the child, $x_1 = +0.96766$ comes back.\\
+Now $n(\text{Kd6}) = 1$, $Q(\text{Kd6}) = 0.96766$.\\
+The root's own average updates too: $Q(\text{root}) = \text{mean}(0.97602, 0.96766) = 0.97184$.
+\end{realdata}
+
+\section{Iteration 1: One Arrow Has a Real Measurement}
+
+Visited policy mass is $0.4513$, so the reduction is $0.33 \cdot \sqrt{0.4513} = 0.33 \cdot 0.67179 = 0.22169$, and unvisited arrows sit at $0.97184 - 0.22169 = 0.75015$.
+
+\begin{center}
+\small
+\begin{tabular}{lcccc}
+  \toprule
+  Move $a$ & $n$ & Measured / FPU $Q$ & Curiosity $U = 1.745 \cdot P \cdot 1 / (1+n)$ & Total $S$ \\
+  \midrule
+  \textbf{Kd6} & 1 & 0.96766 & $1.745 \times 0.4513 / 2 = 0.39376$ & 1.36142 \\
+  \textbf{Kf6} & 0 & 0.75015 & $1.745 \times 0.4423 / 1 = 0.77181$ & \textbf{1.52196} \hfill ($\leftarrow \max$) \\
+  \textbf{Kf5} & 0 & 0.75015 & $1.745 \times 0.0538 / 1 = 0.09388$ & 0.84403 \\
+  \textbf{Kd5} & 0 & 0.75015 & $1.745 \times 0.0526 / 1 = 0.09179$ & 0.84194 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\texttt{Kd6}'s evaluation came back \textbf{excellent} ($+0.96766$) --- and its score still \textit{fell}, from $1.76354$ to $1.36142$. Two separate things did that:
+\begin{enumerate}[leftmargin=2em]
+  \item Its $U$ halved, because $n$ went $0 \to 1$.
+  \item Its $Q$ dropped slightly, the borrowed $0.97602$ giving way to the measured $0.96766$.
+\end{enumerate}
+Meanwhile \texttt{Kf6} kept its full curiosity bonus.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\input{figures/fig_c_iter1.tex}
+\captionof{figure}{\textbf{Iteration 1 S-bar strip.} Kf6 takes the lead ($S = 1.52196$) because Kd6's curiosity bonus halved.}
+\label{fig:iter1}
+\end{minipage}
+\end{center}
+
+\begin{realdata}[Iteration 1 Execution Outcome]
+\textbf{Selected: Kf6.} $x_1 = +0.98598$ comes back --- even better than Kd6's.\\
+$Q(\text{root}) = \text{mean}(0.97602, 0.96766, 0.98598) = 0.97655$.
+\end{realdata}
+
+\section{Iteration 2: Both Good Moves Now Measured}
+
+Visited policy mass is $0.4513 + 0.4423 = 0.8936$, so the reduction grows to $0.33 \cdot \sqrt{0.8936} = 0.33 \cdot 0.94531 = 0.31195$, and unvisited arrows drop to $0.97655 - 0.31195 = 0.66460$.
+
+$N = 2$ now, so $\sqrt{N} = 1.41421$.
+
+\begin{center}
+\small
+\begin{tabular}{lcccc}
+  \toprule
+  Move $a$ & $n$ & Measured / FPU $Q$ & Curiosity $U = 1.745 \cdot P \cdot 1.41421 / (1+n)$ & Total $S$ \\
+  \midrule
+  \textbf{Kd6} & 1 & 0.96766 & $1.745 \times 0.4513 \times 1.41421 / 2 = 0.55696$ & 1.52462 \\
+  \textbf{Kf6} & 1 & 0.98598 & $1.745 \times 0.4423 \times 1.41421 / 2 = 0.54585$ & \textbf{1.53183} \hfill ($\leftarrow \max$) \\
+  \textbf{Kf5} & 0 & 0.66460 & $1.745 \times 0.0538 \times 1.41421 / 1 = 0.13279$ & 0.79739 \\
+  \textbf{Kd5} & 0 & 0.66460 & $1.745 \times 0.0526 \times 1.41421 / 1 = 0.12983$ & 0.79443 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\input{figures/fig_c_iter2.tex}
+\captionof{figure}{\textbf{Iteration 2 S-bar strip.} Both winning moves measured; Kf6 ($S = 1.53183$) edges Kd6 ($S = 1.52462$) on quality.}
+\label{fig:iter2}
+\end{minipage}
+\end{center}
+
+\begin{realdata}[Iteration 2 Execution Outcome]
+\textbf{Selected: Kf6 --- for the second time.}
+\end{realdata}
+
+Note how close it was: $1.53183$ against $1.52462$. \texttt{Kf6} won only because its measured value came back higher. The two bad moves have fallen to about $0.79$ and are no longer competitive.
+
+\section{Iteration 3: And This Is the Answer to ``Why Revisit a Move?''}
+
+\texttt{Kf6} is entered again. Its second sample comes back lower, $x_2 = +0.95128$, and the average moves accordingly:
+\begin{equation}
+  Q(\text{Kf6}) = \frac{0.98598 + 0.95128}{2} = \mathbf{0.96863} \quad (n(\text{Kf6}) = 2)
+\end{equation}
+
+Check with the incremental form:
+\begin{equation*}
+  0.98598 + \frac{0.95128 - 0.98598}{2} = 0.98598 - 0.01735 = \mathbf{0.96863} \quad \text{(Agrees)}
+\end{equation*}
+
+The unvisited arrows drop again, to $0.97024 - 0.31195 = 0.65829$, because the root's own running average moved.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\input{figures/fig_c_iter3.tex}
+\captionof{figure}{\textbf{Iteration 3 S-bar strip.} Pre-pick comparison that led to Kf6's second visit.}
+\label{fig:iter3}
+\end{minipage}
+\end{center}
+
+\textbf{The important part is not the arithmetic --- it is where that second sample came from.} See Chapter~\ref{ch:three_questions}.

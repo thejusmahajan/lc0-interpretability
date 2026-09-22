@@ -1,0 +1,57 @@
+% fig_c_signflip.tex -- Negamax sign flip across alternating plies
+\begin{tikzpicture}[
+    levelnode/.style={rounded corners=3pt, draw=NavyBlue, fill=PaleGrey,
+                      minimum width=46mm, minimum height=11mm, align=center, font=\scriptsize},
+    downedge/.style={-{Stealth[length=2.5mm]}, draw=NavyBlue, line width=1.0pt},
+    upedge/.style={-{Stealth[length=2.5mm]}, draw=IdeaGreen, line width=1.2pt, dashed}
+  ]
+
+  % Level 0: Root (White to move)
+  \node[levelnode, fill=BuildBlue!12] (root) at (0, 3.2) {%
+    \textbf{Root: White to Move}\\[0.3ex]
+    White's evaluation: \textbf{$V = +0.97602$ (Winning!)}\\
+    \color{BuildBlue}\textbf{Recorded on Kd6 edge: $Q = \mathbf{+0.96766}$}%
+  };
+
+  % Level 1: Child after Kd6 (Black to move)
+  \node[levelnode, fill=PitfallRed!10] (child) at (0, 0) {%
+    \textbf{Child: Black to Move (after 1. Kd6)}\\[0.3ex]
+    Network evaluates from \textbf{Black's POV}:\\
+    \color{PitfallRed}\textbf{$V(\text{child}) = \mathbf{-0.96766}$ (Black is losing!)}%
+  };
+
+  % Level 2: Grandchild after Kd8 (White to move)
+  \node[levelnode, fill=BuildBlue!12] (grandchild) at (0, -3.2) {%
+    \textbf{Grandchild: White to Move (after 1... Kd8)}\\[0.3ex]
+    Network evaluates from \textbf{White's POV}:\\
+    \color{IdeaGreen}\textbf{$V(\text{grandchild}) = \mathbf{+0.95128}$ (White is winning!)}%
+  };
+
+  % Forward move edges
+  \draw[downedge] (root.south west) ++(1.0, 0) -- 
+    node[left, font=\tiny\bfseries, text=NavyBlue] {1. Kd6} 
+    ($(child.north west)+(1.0, 0)$);
+
+  \draw[downedge] (child.south west) ++(1.0, 0) -- 
+    node[left, font=\tiny\bfseries, text=NavyBlue] {1... Kd8} 
+    ($(grandchild.north west)+(1.0, 0)$);
+
+  % Backpropagation Negamax sign-flip arrows
+  \draw[upedge] ($(grandchild.north east)+(-1.0, 0)$) -- 
+    node[right, font=\tiny\bfseries, text=IdeaGreen, align=left] {Sign flip:\\[0.2ex] $x = -V = -0.95128$} 
+    ($(child.south east)+(-1.0, 0)$);
+
+  \draw[upedge] ($(child.north east)+(-1.0, 0)$) -- 
+    node[right, font=\tiny\bfseries, text=IdeaGreen, align=left] {Sign flip:\\[0.2ex] $x_1 = -(-0.96766) = \mathbf{+0.96766}$} 
+    ($(root.south east)+(-1.0, 0)$);
+
+  % Side explanation box
+  \node[draw=IdeaGreen, fill=IdeaGreen!8, rounded corners=3pt, font=\scriptsize, align=left, anchor=west] at (3.2, 0) {%
+    \textbf{The Negamax Invariant:}\\[0.5ex]
+    Because chess is zero-sum,\\
+    whatever is good for Black is bad for White.\\[0.8ex]
+    $\mathbf{x_n = -V(\text{child position})}$\\[0.8ex]
+    A single sign flip handles the alternating\\
+    points of view at every tree depth.%
+  };
+\end{tikzpicture}

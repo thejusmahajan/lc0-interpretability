@@ -1,0 +1,59 @@
+\chapter{FPU: What an Arrow Is Worth Before You Have Ever Taken It}
+\label{ch:fpu_transition}
+
+This is the part you pushed hardest on, and you were right.
+
+\begin{studentq}
+``Measured quality $Q$ is for the state prior to the move Kd6, it is not the state that Kd6 caused\dots\ The bonus is added to the prior value of $s$ and not the current state after the move Kd6.''
+\end{studentq}
+
+Correct, and here is the precise statement.
+
+\section{Phase 1: Arrow Never Taken ($n = 0$)}
+
+There is no child position. The network has evaluated nothing down there. There is literally no measurement to average. So the engine needs a placeholder, and it uses the \textbf{parent position's own value} as the starting floor:
+\begin{equation}
+  Q(a) = \underbrace{Q(s)}_{\substack{\text{parent's} \\ \text{running average}}} - \underbrace{k \cdot \sqrt{\sum_{\text{visited}} P(a')}}_{\substack{\text{the FPU reduction} \\ (k = 0.33)}}
+\end{equation}
+
+Two details that are easy to get wrong, and both matter:
+\begin{itemize}[leftmargin=2em]
+  \item The first term is the parent's \textbf{running average $Q(s)$}, not its original network value $V(s)$. Early on they are equal, because the parent's only sample is its own evaluation. They drift apart as children report back.
+  \item The sum is over the \textbf{policy mass already explored}, not the number of moves explored. Spending a visit on a 45\% move makes the engine far more cautious about the rest than spending one on a 5\% move would.
+\end{itemize}
+
+Read the reduction physically: \textit{``we have already spent effort on arrows covering this much of the network's attention, and none of it beat the parent, so be a little more pessimistic about the untried ones.''} At the very start nothing has been visited, the sum is 0, and the placeholder is simply the parent's value.
+
+This is called \textbf{First Play Urgency} (FPU).
+
+\section{Phase 2: The Moment the Arrow Is Taken ($n = 0 \to 1$)}
+
+\begin{studentq}
+``When Kd6 is visited once and its state evaluation is made, does its previous default value get replaced by the new value?'' --- \textbf{Yes. Completely.}
+\end{studentq}
+
+\begin{align*}
+  \text{\textbf{BEFORE:}} \quad & Q(\text{Kd6}) = 0.97602 \quad \text{(borrowed from parent; a temporary placeholder)} \\[1ex]
+  & \text{The search plays Kd6, evaluates child, returns } x_1 = +0.96766 \\[1ex]
+  \text{\textbf{AFTER:}} \quad & Q(\text{Kd6}) = \mathbf{0.96766} \quad \text{(its own measurement; } n = 1, W = 0.96766\text{)}
+\end{align*}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\input{figures/fig_c_fpu.tex}
+\captionof{figure}{\textbf{The FPU transition.} The placeholder is discarded entirely upon the first visit; it is never blended with real measurements.}
+\label{fig:fpu}
+\end{minipage}
+\end{center}
+
+The placeholder is \textbf{discarded, not blended}. It was never data. From this moment on, $Q(\text{Kd6})$ is determined entirely by real evaluations returning from below that arrow.
+
+And crucially: the three arrows still at $n = 0$ keep using the placeholder --- now with a slightly larger FPU reduction, because \texttt{Kd6}'s prior has joined the ``already visited'' sum.
+
+\begin{keyidea}[title={One Line to Remember}]
+\begin{align*}
+  n = 0 \quad &\longrightarrow \quad Q \text{ comes from the \textbf{PARENT} position (borrowed, temporary)} \\
+  n \ge 1 \quad &\longrightarrow \quad Q \text{ comes from the \textbf{CHILD} positions (measured, permanent)}
+\end{align*}
+\end{keyidea}

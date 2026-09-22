@@ -1,0 +1,323 @@
+\chapter{One slot machine: estimating a value you can only sample}
+\label{ch:onemachine}
+
+\begin{objectives}
+\begin{itemize}
+\item Explain why a chess move's value is something you \emph{sample} rather than compute.
+\item Derive the running-average update $Q \leftarrow Q + (x - Q)/n$ from the definition of
+  a mean, and recognise it as Leela's $W/N$.
+\item Say how wrong a sample mean can be after $n$ samples, and why the answer shrinks like
+  $1/\sqrt{n}$ and not like $1/n$.
+\item Turn "how wrong could I be?" into an explicit $\pm$ number using Hoeffding's bound,
+  and thereby produce the exact expression $\sqrt{\ln(\cdot)/n}$ that will become the
+  exploration bonus in Chapter~\ref{ch:manymachines}.
+\end{itemize}
+\end{objectives}
+
+\section{Why a move's value has to be sampled}
+
+In Chapter~\ref{ch:problem} we treated evaluation as a function you \emph{compute}: hand a
+position to $f$, receive a number. Monte-Carlo search takes a different view, and it is
+worth getting the shift straight before any mathematics.
+
+Suppose you are considering $1.\,\text{Nf5}$. What is it worth? Its true value is the result
+of perfect play from there --- unavailable. What you can do instead is \emph{look at one
+continuation} and see how it turns out. Then another. Then another. Each look gives you a
+number, and the numbers disagree, because different continuations lead to different places.
+
+\begin{keyidea}
+The value of a move is not a quantity you read off. It is the \textbf{average outcome over
+the continuations you examine}. Each visit to a move is one \emph{sample} of its value. The
+engine's job is to decide which move to sample next, and its estimate of a move is the
+running average of the samples it has taken.
+\end{keyidea}
+
+This is the whole reason a casino metaphor shows up in a chess book. A slot machine is a
+device that returns a random payout each time you pull it; you can only learn what a machine
+is worth by pulling it. A candidate move, in Monte-Carlo search, behaves exactly like that:
+pull it (search one line through it), get a payout (the evaluation at the end of the line),
+and update your opinion.
+
+Two warnings, now rather than later.
+
+\begin{pitfall}
+\textbf{(1) Leela does not play random games.} In the original Monte-Carlo tree search of the
+2000s, a "sample" meant playing the game out to the end with random moves and scoring the
+result. Leela never does this. Its sample is a single network evaluation of the position at
+the end of the line --- one forward pass, no rollout. The \emph{statistics} are Monte-Carlo;
+the \emph{samples} are not random games. Chapter~\ref{ch:uct} makes this precise.
+
+\smallskip
+\textbf{(2) The samples are not independent, and get less random over time.} Real slot
+machines pay out independently; a chess move's samples are chosen deliberately and become
+increasingly concentrated on the best line. That is a feature, but it means the classical
+guarantees in this chapter are motivation for the formula, not proof about the engine. Keep
+that distinction; Chapter~\ref{ch:manymachines} returns to it.
+\end{pitfall}
+
+\section{The running average, and where $W/N$ comes from}
+
+Say a move has been visited $n$ times, producing values $x_1, x_2, \dots, x_n$. Its estimate
+is the sample mean, which we will call $Q$ from the start, because that is its name in every
+engine log you will ever read:
+\begin{equation}
+  \label{eq:samplemean}
+  Q_n \;=\; \frac{1}{n}\sum_{i=1}^{n} x_i \;=\; \frac{W_n}{n},
+  \qquad\text{where } W_n = \sum_{i=1}^{n} x_i .
+\end{equation}
+
+That is already the engine's data structure. Leela stores, on every edge of its tree, exactly
+two numbers: $W$ (the running total of everything backed up through this edge) and $N$ (how
+many times it has been visited). $Q = W/N$ is not a concept, it is a division.
+
+\subsection{Updating without re-adding everything}
+
+You do not want to keep the whole list $x_1,\dots,x_n$. You want to update $Q$ in place.
+Start from the definition and do nothing clever:
+\[
+Q_{n} = \frac{1}{n}\sum_{i=1}^{n} x_i
+      = \frac{1}{n}\left(\sum_{i=1}^{n-1} x_i + x_n\right)
+      = \frac{1}{n}\Bigl((n-1)\,Q_{n-1} + x_n\Bigr).
+\]
+Expand and regroup:
+\[
+Q_n = \frac{n\,Q_{n-1} - Q_{n-1} + x_n}{n} = Q_{n-1} + \frac{x_n - Q_{n-1}}{n}.
+\]
+
+\begin{finalform}[The incremental mean]
+\begin{equation}
+  \label{eq:incmean}
+  Q_n \;=\; Q_{n-1} \;+\; \frac{1}{n}\,\bigl(x_n - Q_{n-1}\bigr).
+\end{equation}
+\emph{New estimate = old estimate + (surprise) $\times$ (a shrinking step size).} The
+quantity $x_n - Q_{n-1}$ is how much the newest sample disagreed with what you believed;
+$1/n$ says a disagreement counts for less and less as evidence accumulates.
+\end{finalform}
+
+\begin{worked}{watching an estimate settle}
+A move is sampled six times, giving $x = 0.90,\ 0.20,\ 0.75,\ 0.85,\ 0.60,\ 0.80$.
+(Illustrative numbers, not engine output.) Apply Equation~\eqref{eq:incmean}:
+
+\begin{center}
+\begin{tabular}{@{}rrrrl@{}}
+\toprule
+$n$ & $x_n$ & surprise $x_n - Q_{n-1}$ & step $\tfrac1n$ & $Q_n$ \\
+\midrule
+1 & 0.90 & --- & --- & $0.900$ \\
+2 & 0.20 & $0.20-0.900=-0.700$ & $0.500$ & $0.900 - 0.350 = 0.550$ \\
+3 & 0.75 & $0.75-0.550=+0.200$ & $0.333$ & $0.550 + 0.067 = 0.617$ \\
+4 & 0.85 & $0.85-0.617=+0.233$ & $0.250$ & $0.617 + 0.058 = 0.675$ \\
+5 & 0.60 & $0.60-0.675=-0.075$ & $0.200$ & $0.675 - 0.015 = 0.660$ \\
+6 & 0.80 & $0.80-0.660=+0.140$ & $0.167$ & $0.660 + 0.023 = 0.683$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Check: $W_6 = 0.90+0.20+0.75+0.85+0.60+0.80 = 4.10$, and $4.10/6 = 0.683$. \checkmark
+
+Two things to notice, both of which have chess consequences.
+\begin{itemize}
+\item \textbf{The second sample moved the estimate by $0.35$; the sixth moved it by $0.02$.}
+  Early samples dominate. In a search tree, this is why a move whose first look is terrible
+  can be abandoned quickly --- and why an engine at 50 nodes has genuinely flimsy opinions.
+\item \textbf{One refutation drags an average down but does not zero it.} $Q$ after the
+  disastrous $0.20$ was still $0.55$. An average is a compromise between what you have seen;
+  chess is not a compromise --- if one reply refutes the move, the move is refuted. This is
+  a real weakness of averaging, and Chapter~\ref{ch:engineering} covers what engines do
+  about it.
+\end{itemize}
+\end{worked}
+
+\section{How wrong is a sample mean?}
+
+$Q_n$ is an estimate of the move's true value $\mu$. The engine must know not just its
+estimate but \emph{how much to trust it}, because that is what tells it whether to look
+again. So: after $n$ samples, how far can $Q_n$ be from $\mu$?
+
+\subsection{The $1/\sqrt{n}$ law}
+
+Here is the fact that governs everything (stated; the proof is standard and not needed):
+
+\begin{established}
+If the samples are independent draws with true mean $\mu$ and standard deviation $\sigma$,
+then the sample mean $Q_n$ has standard deviation
+\begin{equation}
+  \label{eq:se}
+  \text{(typical error of } Q_n) \;=\; \frac{\sigma}{\sqrt{n}} .
+\end{equation}
+\end{established}
+
+The square root is the single most consequential fact in this book, so make it concrete.
+Take $\sigma = 0.4$ (plausible for values in $[-1,+1]$):
+
+\begin{center}
+\begin{tabular}{@{}rrl@{}}
+\toprule
+Samples $n$ & Typical error $0.4/\sqrt{n}$ & \\
+\midrule
+1    & $0.400$ & the estimate is nearly worthless \\
+4    & $0.200$ & \\
+16   & $0.100$ & \\
+64   & $0.050$ & \\
+256  & $0.025$ & \\
+1024 & $0.013$ & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{keyidea}
+\textbf{To halve your uncertainty you must quadruple your evidence.} Precision is bought at
+quadratically increasing cost. This is why a search cannot afford to be precise about
+everything: driving one move's error from $0.10$ to $0.05$ costs the same 48 extra visits
+that could have given four other moves their first look. \emph{Precision is a budget, and
+spending it is the search's entire job.}
+\end{keyidea}
+
+There is a direct chess reading of this. When an engine reports an evaluation after a short
+search, the last digit is noise. When your tool tells you a move loses $0.08$ of evaluation,
+Equation~\eqref{eq:se} is the reason you should ask how many nodes were behind that number
+before you believe it. Chapter~\ref{ch:readingtree} turns this into a practical rule.
+
+\subsection{From "typical error" to a guarantee}
+
+"Typical error" is not enough for an algorithm. An algorithm needs a statement of the form
+\emph{"I am confident the truth is not more than $\epsilon$ above my estimate."} That is a
+one-sided bound, and it is exactly what the search will use to decide whether a move might
+still be better than it looks.
+
+Hoeffding's inequality provides one. For samples bounded in an interval of width $R$ (for
+us $x_i \in [-1,+1]$, so $R = 2$):
+
+\begin{established}
+\textbf{Hoeffding's inequality.} For independent samples in an interval of width $R$,
+\begin{equation}
+  \label{eq:hoeffding}
+  \Pr\bigl(\,\mu \ge Q_n + \epsilon \,\bigr)\;\le\; \exp\!\left(-\frac{2n\epsilon^{2}}{R^{2}}\right).
+\end{equation}
+In words: the chance that the truth exceeds your estimate by $\epsilon$ or more falls off
+\emph{exponentially} in $n\epsilon^2$.
+\end{established}
+
+Now invert it. Suppose we are willing to be wrong with probability at most $\delta$. Set the
+right-hand side equal to $\delta$ and solve for $\epsilon$:
+\[
+\exp\!\left(-\frac{2n\epsilon^{2}}{R^{2}}\right) = \delta
+\;\Longrightarrow\;
+-\frac{2n\epsilon^{2}}{R^{2}} = \ln \delta
+\;\Longrightarrow\;
+\epsilon^{2} = \frac{R^{2}\ln(1/\delta)}{2n},
+\]
+\begin{equation}
+  \label{eq:epsilon}
+  \boxed{\;\epsilon \;=\; R\,\sqrt{\frac{\ln(1/\delta)}{2n}}\;}
+\end{equation}
+
+Stop and look at the shape of Equation~\eqref{eq:epsilon}, because you are going to meet it
+again in six pages wearing a different hat:
+\begin{itemize}
+\item $\epsilon$ shrinks like $1/\sqrt{n}$ --- the same square root as before;
+\item it grows like $\sqrt{\ln(1/\delta)}$ --- demanding more certainty costs you, but only
+  \emph{logarithmically}, which is cheap;
+\item it is proportional to the range $R$ --- noisier quantities need wider bounds.
+\end{itemize}
+
+\begin{worked}{a concrete confidence bound}
+A move has been visited $n = 25$ times with $Q = 0.30$; values lie in $[-1,+1]$ so $R = 2$.
+We want a bound that is wrong at most $5\%$ of the time, $\delta = 0.05$.
+\[
+\epsilon = 2\sqrt{\frac{\ln(1/0.05)}{2\times 25}}
+        = 2\sqrt{\frac{\ln 20}{50}}
+        = 2\sqrt{\frac{2.996}{50}}
+        = 2\sqrt{0.0599} = 2\times 0.2448 = 0.490 .
+\]
+So we can say, with $95\%$ confidence, $\mu \le 0.30 + 0.49 = 0.79$.
+
+That is a very loose statement --- after 25 visits the move could plausibly be nearly
+winning or clearly worse than we think. Now the same computation at $n=400$:
+\[
+\epsilon = 2\sqrt{\frac{2.996}{800}} = 2\times 0.0612 = 0.122,\qquad \mu \le 0.42 .
+\]
+Sixteen times the work, four times tighter. The $1/\sqrt{n}$ law, in the flesh.
+\end{worked}
+
+\section{The optimism principle}
+
+We now have, for any move, two numbers: what it has scored ($Q_n$) and how much room there
+is above that ($\epsilon$). The quantity
+\begin{equation}
+  \label{eq:optimism}
+  \underbrace{Q_n}_{\text{measured}} \;+\; \underbrace{\epsilon}_{\text{room for error}}
+\end{equation}
+is called an \textbf{upper confidence bound}: the best this move could plausibly be, given
+what you have seen so far. It is the highest value you cannot yet rule out.
+
+\begin{keyidea}
+\textbf{Optimism in the face of uncertainty.} When choosing what to examine next, rank moves
+not by what they have scored, but by \emph{the best they could plausibly be}. Then one of two
+good things happens on every visit: either the move really is that good --- excellent, you
+found it --- or it is not, and the visit shrinks $\epsilon$, so the illusion cannot persist.
+Either way the visit was not wasted.
+\end{keyidea}
+
+That single sentence is the engine's entire attitude to thinking. Everything from here to
+Chapter~\ref{ch:byhand} is a matter of writing down $\epsilon$ well: Chapter~\ref{ch:manymachines}
+turns Equation~\eqref{eq:optimism} into UCB1 by choosing $\delta$ sensibly,
+Chapter~\ref{ch:uct} puts it on a tree, and Chapter~\ref{ch:puct} replaces the statistical
+$\epsilon$ with a \emph{learned} one --- which is where a chess engine's intuition finally
+enters the mathematics.
+
+\begin{repobox}[title={in this repository}]
+$W$ and $N$ per edge are the whole state of Leela's tree. In the verbose output you already
+have (\texttt{--verbose-move-stats}), the fields \texttt{N:} and \texttt{Q:} are exactly $n$
+and $Q_n$ of this chapter; \texttt{U:} is the $\epsilon$ of Equation~\eqref{eq:optimism},
+built in Chapter~\ref{ch:puct}. There is no $W$ column because $W = Q\cdot N$.
+\end{repobox}
+
+\begin{exercises}
+
+\exhead[running average]{ch3:running} A move is visited five times with values
+$0.10,\ 0.60,\ 0.40,\ 0.50,\ 0.90$. Use Equation~\eqref{eq:incmean} step by step to get
+$Q_5$, showing the surprise and the step size each time. Verify against $W/N$.
+
+\exhead[the weight of the first look]{ch3:firstlook} Using Equation~\eqref{eq:incmean}, by
+how much can a single sample move the estimate when $n = 2$? When $n = 50$? A move currently
+has $Q = 0.80$ over $N = 50$ visits and its next visit returns $-1.0$ (it loses on the spot).
+What is the new $Q$? Comment on what this means for an engine trying to notice a refutation
+that only appears deep in a well-trodden line.
+
+\exhead[the square-root law]{ch3:sqrtlaw} With $\sigma = 0.4$, how many samples do you need
+for a typical error below $0.02$? Below $0.01$? What is the ratio of those two answers, and
+what general rule does it illustrate?
+
+\exhead[budget arithmetic]{ch3:budget} You have 100 visits and two moves. Option A: 50 visits
+each. Option B: 90 to the first, 10 to the second. Using $\sigma = 0.4$, compute the typical
+error on each move under both plans. Which plan is better if you must \emph{rank} the two
+moves, and which is better if you must \emph{report an accurate evaluation} for the first
+one? (There is no single right answer; the point is that the right split depends on the
+question being asked.)
+
+\exhead[Hoeffding]{ch3:hoeffding} Compute the $95\%$ upper bound $\epsilon$ from
+Equation~\eqref{eq:epsilon} for $n = 1, 4, 16, 64, 256$ with $R = 2$. Tabulate. At what $n$
+does the bound first become narrower than the whole range of a decisive-versus-drawn
+distinction (say $\epsilon < 0.25$)?
+
+\exhead[the price of certainty]{ch3:certainty} Compare $\epsilon$ at $\delta = 0.05$ and at
+$\delta = 0.001$ for fixed $n = 100$, $R = 2$. By what factor did the bound widen when you
+demanded 50 times more certainty? Which term in Equation~\eqref{eq:epsilon} is responsible,
+and why is that reassuring for an algorithm that must be right many times in a row?
+
+\exhead[optimism, by hand]{ch3:optimism} Three moves have $(Q, n)$ of $A: (0.55, 100)$,
+$B: (0.40, 4)$, $C: (0.62, 900)$. Using $R = 2$, $\delta = 0.1$, compute $Q + \epsilon$ for
+each. Which move does the optimism principle examine next? Which move would a greedy
+"pick the best average" rule examine? State in one sentence what the optimism rule is
+buying with the difference.
+
+\exhead[where the metaphor breaks]{ch3:metaphor} Give two specific ways a chess move differs
+from a slot machine, beyond those mentioned in this chapter. For each, say whether it makes
+the estimate $Q$ too optimistic, too pessimistic, or merely noisier.
+
+\exhead[reading the log]{ch3:log} An engine line reads \texttt{N: 4 ... (Q: 0.61)}. Another
+reads \texttt{N: 1900 ... (Q: 0.58)}. A user concludes "the first move is better". Write the
+two-sentence correction you would put in a training tool, using a number from this chapter.
+
+\end{exercises}

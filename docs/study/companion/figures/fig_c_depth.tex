@@ -1,0 +1,42 @@
+% fig_c_depth.tex -- Emergent depth across successive visits to the same move
+\begin{tikzpicture}[
+    treenode/.style={rounded corners=3pt, draw=NavyBlue, fill=PaleGrey,
+                     minimum width=32mm, minimum height=8mm, align=center, font=\tiny},
+    newleaf/.style={rounded corners=3pt, draw=IdeaGreen, fill=IdeaGreen!12, line width=1.1pt,
+                    minimum width=32mm, minimum height=8mm, align=center, font=\tiny},
+    movearrow/.style={-{Stealth[length=2.5mm]}, draw=GoldPath, line width=1.4pt}
+  ]
+
+  % Panel A: Visit 1 to Kf6 (Depth 1)
+  \node[font=\footnotesize\bfseries, text=NavyBlue, align=center] at (2.0, 3.8) {%
+    Visit 1 to Kf6 (Iteration 2)\\
+    \scriptsize\color{WorkGrey}Stops at child (Depth 1)%
+  };
+
+  \node[treenode] (r1) at (2.0, 2.6) {\textbf{Root} (White to move)\\$V = +0.97602$};
+  \node[newleaf] (c1) at (2.0, 0.8) {\textbf{Child Node $s_2'$} (Black to move)\\\color{IdeaGreen}\textbf{Evaluated here: $x_1 = +0.98598$}};
+
+  \draw[movearrow] (r1) -- node[right, font=\tiny\bfseries, text=GoldPath] {1. Kf6} (c1);
+
+  % Panel B: Visit 2 to Kf6 (Depth 2)
+  \begin{scope}[xshift=7.0cm]
+    \node[font=\footnotesize\bfseries, text=NavyBlue, align=center] at (2.0, 3.8) {%
+      Visit 2 to Kf6 (Iteration 3)\\
+      \scriptsize\color{WorkGrey}Passes through to grandchild (Depth 2)%
+    };
+
+    \node[treenode] (r2) at (2.0, 2.6) {\textbf{Root} (White to move)\\$V = +0.97602$};
+    \node[treenode] (c2) at (2.0, 1.0) {\textbf{Child Node $s_2'$} (Existing)\\$n=2,\ Q = 0.96863$};
+    \node[newleaf] (gc2) at (2.0, -0.6) {\textbf{Grandchild Node $s_2''$} (White to move)\\\color{IdeaGreen}\textbf{Evaluated here: $x_2 = +0.95128$}};
+
+    \draw[movearrow] (r2) -- node[right, font=\tiny\bfseries, text=GoldPath] {1. Kf6} (c2);
+    \draw[movearrow] (c2) -- node[right, font=\tiny\bfseries, text=GoldPath] {1... Kf8} (gc2);
+  \end{scope}
+
+  % Summary note below
+  \node[draw=GoldPath, fill=white, rounded corners=3pt, inner sep=4pt, font=\scriptsize, align=center] at (5.5, -1.8) {%
+    \textbf{Depth is Emergent:}\\[0.3ex]
+    Search never schedules fixed plies. Every time a move wins selection,\\
+    it walks down the branch and pushes the frontier \textbf{one level deeper}!%
+  };
+\end{tikzpicture}

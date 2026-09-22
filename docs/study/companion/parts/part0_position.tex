@@ -1,0 +1,26 @@
+\chapter{The One Position We Will Use Throughout}
+\label{ch:position}
+
+A step-by-step companion to \texttt{guide/neural\_mcts\_visual\_guide\_v2.pdf}.
+
+Every formula here is written in plain text. Every number can be checked with a calculator. Nothing is asserted that you cannot verify yourself by the end of Chapter~\ref{ch:full_trace}.
+
+This guide is built around the questions you actually asked. Where a section answers one of them directly, it says so.
+
+\section{The Position Setup}
+
+\begin{center}
+\input{figures/fig_c_board.tex}
+\captionof{figure}{\textbf{The 4-legal-move King+Pawn endgame position.} FEN: \texttt{4k3/8/4K3/4P3/8/8/8/8 w - - 0 1}. White King on e6, White Pawn on e5, Black King on e8. White to move.}
+\label{fig:board}
+\end{center}
+
+White to move. Exactly 4 legal moves:
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Kd6} --- step forward-left (keeps the win)
+  \item \textbf{Kf6} --- step forward-right (keeps the win)
+  \item \textbf{Kf5} --- step backward-right (throws the win away, draws)
+  \item \textbf{Kd5} --- step backward-left (throws the win away, draws)
+\end{itemize}
+
+Four legal moves is the point. Every number in the search can be written on one line, so nothing has to be taken on trust.

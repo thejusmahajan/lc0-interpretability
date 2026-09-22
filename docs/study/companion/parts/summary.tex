@@ -1,0 +1,40 @@
+\chapter{One-Page Summary}
+\label{ch:summary}
+
+\begin{established}[The Core Principles of Neural MCTS]
+\begin{description}[leftmargin=2em, style=sameline]
+  \item[The Network] (once per new position):
+    \begin{align*}
+      \text{Value head} &\longrightarrow w, d, l \longrightarrow V = w - l \quad \text{(how the position stands)} \\
+      \text{Policy head} &\longrightarrow P \text{ per move} \quad \text{(where to look first)}
+    \end{align*}
+  \item[Every Arrow] carries: $P$ (fixed), $n$ (visits), $W$ (total), $Q = W/n$ (running average).
+  \item[Selection Rule] (at every node, every iteration):
+    \begin{align*}
+      S(a) &= Q(a) + U(a) \\
+      U(a) &= c \cdot P(a) \cdot \frac{\sqrt{N}}{1 + n(a)} \quad \longrightarrow \quad \text{take } \argmax_a S(a)
+    \end{align*}
+  \item[Quality $Q$] (depending on the visit count):
+    \begin{align*}
+      n = 0 \quad &\longrightarrow \quad \text{borrowed from parent, minus the FPU reduction} \\
+      n \ge 1 \quad &\longrightarrow \quad \text{real average of values from child positions (discarded, never blended)}
+    \end{align*}
+  \item[Backup Step]: $x_n = -V(\text{child position})$ because sides alternate.
+  \item[Why It Works]:
+    \begin{itemize}
+      \item Bad moves are sampled once and abandoned, so they barely enter the average.
+      \item Good moves are sampled repeatedly, and each repeat pushes one ply deeper.
+      \item Depth is never scheduled --- it emerges from the same move winning again.
+    \end{itemize}
+\end{description}
+\end{established}
+
+\vfill
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\paragraph{Notes on Alignment with the Visual Guide.}
+\textit{Companion to \path{guide/neural_mcts_visual_guide_v2.pdf}. Every number here is taken from that guide's own figure sources (\texttt{guide/figures/fig\_2\_*.tex}), so the two documents agree to five decimal places. The constants $c = 1.745$ and $k = 0.33$ reproduce every published score exactly.}
+
+\paragraph{One Subtlety Worth Stating.}
+\textit{The FPU baseline is computed from the parent's \textbf{running average $Q$}, not from its original network value $V$. The two differ as soon as children start reporting back --- using $V$ here gives $0.75433$ where the engine gives $0.75015$. LC0's real exploration constant also grows slowly with visit count rather than staying fixed, which changes none of the mechanisms described here.}

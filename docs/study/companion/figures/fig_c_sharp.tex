@@ -1,0 +1,43 @@
+% fig_c_sharp.tex -- Sharp vs Drawish comparison at identical E = 0.60
+\begin{tikzpicture}[scale=0.85, every node/.style={font=\small}]
+  % Position A: Sharp Sicilian
+  \node[font=\footnotesize\bfseries, text=NavyBlue, anchor=south] at (2.2, 3.6) {Position A: Sharp Tactical Brawl};
+  \fill[IdeaGreen!70] (0, 0) rectangle (4.4, 0.55*3.5);
+  \fill[WorkGrey!35] (0, 0.55*3.5) rectangle (4.4, 0.65*3.5);
+  \fill[PitfallRed!65] (0, 0.65*3.5) rectangle (4.4, 1.0*3.5);
+  \draw[NavyBlue, line width=0.8pt] (0,0) rectangle (4.4, 3.5);
+  \draw[NavyBlue, line width=0.5pt] (0, 0.55*3.5) -- (4.4, 0.55*3.5);
+  \draw[NavyBlue, line width=0.5pt] (0, 0.65*3.5) -- (4.4, 0.65*3.5);
+
+  \node[white, font=\tiny\bfseries] at (2.2, 0.95) {$w = 0.55$ (55\% Win)};
+  \node[black, font=\tiny\bfseries] at (2.2, 2.1) {$d = 0.10$ (10\% Draw)};
+  \node[white, font=\tiny\bfseries] at (2.2, 2.9) {$l = 0.35$ (35\% Loss)};
+
+  \node[font=\footnotesize, align=center, anchor=north] at (2.2, -0.2) {%
+    $E = 0.55 + \frac{1}{2}(0.10) = \mathbf{0.60}$\\[0.3ex]
+    \textit{Razor sharp: high volatility}%
+  };
+
+  % Position B: Dry Rook Endgame
+  \begin{scope}[xshift=6cm]
+    \node[font=\footnotesize\bfseries, text=NavyBlue, anchor=south] at (2.2, 3.6) {Position B: Dry Rook Endgame};
+    \fill[IdeaGreen!70] (0, 0) rectangle (4.4, 0.20*3.5);
+    \fill[WorkGrey!35] (0, 0.20*3.5) rectangle (4.4, 1.0*3.5);
+    \draw[NavyBlue, line width=0.8pt] (0,0) rectangle (4.4, 3.5);
+    \draw[NavyBlue, line width=0.5pt] (0, 0.20*3.5) -- (4.4, 0.20*3.5);
+
+    \node[white, font=\tiny\bfseries] at (2.2, 0.35) {$w = 0.20$ (20\% Win)};
+    \node[black, font=\tiny\bfseries] at (2.2, 2.1) {$d = 0.80$ (80\% Draw)};
+
+    \node[font=\footnotesize, align=center, anchor=north] at (2.2, -0.2) {%
+      $E = 0.20 + \frac{1}{2}(0.80) = \mathbf{0.60}$\\[0.3ex]
+      \textit{Completely safe: $l = 0.00$}%
+    };
+  \end{scope}
+
+  % Summary note below
+  \node[draw=NavyBlue!40, fill=PaleGrey, rounded corners=3pt, inner sep=4pt, font=\scriptsize, align=center] at (5.2, -1.8) {%
+    \textbf{The Key Insight:} Both positions have identical Expected Score ($E = 0.60$, $\approx +0.80$ cp),\\
+    yet their character is completely different. The full $(w, d, l)$ triad captures this instantly.%
+  };
+\end{tikzpicture}

@@ -1,0 +1,140 @@
+/* We override some default Lichess PGN viewer variables to match our glassmorphism UI */
+.pgn-viewer-container {
+  display: flex;
+  gap: 32px;
+  max-width: 1200px;
+  margin: 0 auto;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.board-section {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-card);
+}
+
+.lichess-wrapper {
+  /* This width controls the lichess viewer container size */
+  width: 500px;
+  max-width: 100vw;
+  /* Override CSS variables for Lichess PGN Viewer to match our dark theme */
+  --cg-board-dark: #8a2be2;
+  --cg-board-light: #f8f9fa;
+  --lpv-color-bg: transparent;
+  --lpv-color-text: var(--text-primary);
+  --lpv-color-border: rgba(255,255,255,0.1);
+  --lpv-color-hover: rgba(255,255,255,0.05);
+  --lpv-color-active: var(--accent-primary);
+}
+
+/* Lichess viewer natively sets background-colors and borders that we want to integrate */
+.lpv .lpv__board {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+}
+
+.lpv .lpv__moves {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid var(--border-glass);
+  margin-top: 16px;
+}
+
+.input-section {
+  flex: 1;
+  min-width: 320px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.input-section h2 {
+  font-size: 1.8rem;
+  background: linear-gradient(to right, #fff, var(--text-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+}
+
+.load-btn {
+  margin-top: 8px;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .pgn-viewer-container {
+    flex-direction: column;
+    align-items: center;
+  }
+  .input-section {
+    width: 100%;
+  }
+  .lichess-wrapper {
+    width: 100%;
+  }
+}
+
+/* Move List Panel */
+.move-list-panel {
+  flex: 1;
+  min-height: 200px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.move-row {
+  display: flex;
+  align-items: center;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+.move-number {
+  width: 40px;
+  color: var(--text-muted);
+  text-align: right;
+  padding-right: 8px;
+  user-select: none;
+}
+
+.move-san {
+  width: 60px;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--text-primary);
+  transition: background 0.2s, color 0.2s;
+  text-align: left;
+}
+
+.move-san:hover:not(.empty) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.move-san.active-move {
+  background: var(--accent-primary);
+  color: #fff;
+  font-weight: bold;
+}
+
+.move-san.empty {
+  cursor: default;
+}

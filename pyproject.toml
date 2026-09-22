@@ -1,0 +1,16 @@
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # Exclude Lichess Tagger from formatting to prevent breaking their logic
+  backend/lichess_tagger
+)/
+'''
+
+[tool.pytest.ini_options]
+addopts = "-v --tb=short"
+testpaths = [
+    "backend/tests",
+]

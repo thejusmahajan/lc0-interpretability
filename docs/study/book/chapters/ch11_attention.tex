@@ -1,0 +1,371 @@
+\chapter{Why attention: building a transformer layer}
+\label{ch:attention}
+
+\begin{objectives}
+\begin{itemize}
+\item Explain why chess punishes architectures that assume nearby squares matter most.
+\item Build attention in six steps, from "average your neighbours" to the real formula.
+\item Compute a complete attention operation by hand over three squares and check it.
+\item Say what the query, key and value projections each mean, and why three are needed.
+\item Explain the $\sqrt{d_k}$ with a numerical demonstration of what goes wrong without it.
+\item Describe exactly what \texttt{BT3-768x15x24h} names, and count the attention matrices in
+  one forward pass.
+\end{itemize}
+\end{objectives}
+
+\section{The board as 64 tokens}
+
+The network must turn a position into an evaluation. First it must represent the position as
+numbers. Leela's transformer nets do this the way a language model represents a sentence:
+
+\begin{keyidea}
+\textbf{The board is a sequence of 64 tokens, one per square.} Each square is represented by
+a vector of $d = 768$ numbers. Initially those numbers encode what is standing there (piece
+type, colour) plus global facts (side to move, castling rights, repetition count, and several
+previous positions --- the history of Chapter~\ref{ch:byhand} §7.6). Thereafter, each layer
+\emph{rewrites} all 64 vectors, and what they encode is up to the training process.
+\end{keyidea}
+
+The whole position is therefore a $64 \times 768$ block of numbers, and the network's job is
+to refine that block fifteen times and then read two answers out of it.
+
+\begin{notationbox}
+$\vv{x}_i \in \R^{768}$ is the vector at square $i$. $X \in \R^{64\times768}$ stacks all 64.
+Superscripts denote layers: $X^{(0)}$ is the input encoding, $X^{(15)}$ the final one.
+\end{notationbox}
+
+\section{The problem with the obvious architecture}
+
+Before transformers, chess networks were \emph{convolutional}: each square's new value is
+computed from a small fixed neighbourhood --- itself and the eight squares around it --- and
+the same rule is applied at every square. Stack enough of these and information spreads
+across the board a step at a time.
+
+That works, and Leela's earlier networks were built this way. But it is a poor match for
+chess, for two reasons.
+
+\begin{enumerate}
+\item \textbf{Chess relations are long-range.} A bishop on c4 and the square f7 are related in
+  the strongest possible way, and they are four squares apart with two squares in between
+  which have nothing to do with it. A convolution must pass that relationship through several
+  layers of neighbours, degrading it, when the relationship is direct.
+\item \textbf{Chess relations are content-dependent.} Whether c4 and f7 are related \emph{at
+  all} depends on what is on d5 and e6. A convolution's neighbourhood is fixed before the
+  position is seen; the set of squares that matter is not.
+\end{enumerate}
+
+What we want instead is an operation where \textbf{each square decides for itself which other
+squares to read from, based on what is on them}. That is attention.
+
+\section{Building attention in six steps}
+
+\begin{attempt}{1}{average everything}
+Give every square the average of all 64 squares:
+$\vv{x}_i' = \frac{1}{64}\sum_j \vv{x}_j$.
+Information now travels any distance in one step --- the long-range problem is solved. But
+every square receives the identical mush, and nothing depends on what is where. Useless, but
+it establishes the shape: \textbf{a new value is a weighted sum of the others.}
+\end{attempt}
+
+\begin{attempt}{2}{fixed weights}
+$\vv{x}_i' = \sum_j \alpha_{ij}\,\vv{x}_j$ with $\alpha_{ij}$ learned constants --- so the
+network can learn that c4 should read heavily from f7. Better, and it can encode geometry.
+But $\alpha$ is fixed once training ends: c4 reads from f7 with the same intensity whether the
+diagonal is open, blocked, or the bishop is not there at all. \textbf{The weights must depend
+on the content of the squares, not just their names.}
+\end{attempt}
+
+\begin{attempt}{3}{weights from similarity}
+Let the weight between two squares be their \emph{similarity}, measured by the dot product:
+\[
+  e_{ij} \;=\; \vv{x}_i \cdot \vv{x}_j \;=\; \sum_{c=1}^{d} x_{ic}\,x_{jc}.
+\]
+Recall what a dot product does: it is large and positive when two vectors point the same way,
+zero when they are perpendicular, negative when opposed. So $e_{ij}$ is large when squares $i$
+and $j$ carry "compatible" content --- and what counts as compatible is learned.
+
+\begin{worked}{dot products as a compatibility test}
+Three two-dimensional vectors: $\vv{a} = (1, 0)$, $\vv{b} = (0.9, 0.4)$,
+$\vv{c} = (-0.7, 0.7)$.
+\[
+\vv{a}\cdot\vv{b} = 0.9,\qquad \vv{a}\cdot\vv{c} = -0.7,\qquad \vv{b}\cdot\vv{c} = -0.35 .
+\]
+$\vv{a}$ and $\vv{b}$ point nearly the same way: strongly compatible. $\vv{a}$ and $\vv{c}$
+point away from each other: incompatible. \emph{(Illustrative.)}
+\end{worked}
+\end{attempt}
+
+\begin{attempt}{4}{make the weights a distribution --- softmax}
+The scores $e_{ij}$ can be negative and do not sum to anything in particular, so they are not
+usable as mixing weights. Convert them into a probability distribution over the 64 squares
+with the \textbf{softmax}:
+\begin{equation}
+  \label{eq:softmax}
+  \alpha_{ij} \;=\; \frac{e^{\,e_{ij}}}{\sum_{k=1}^{64} e^{\,e_{ik}}} .
+\end{equation}
+Exponentiating makes everything positive; dividing by the sum makes the row add to 1. The
+result is literally \emph{how square $i$ divides its attention over the board}.
+
+\begin{worked}{softmax by hand}
+Scores $(2.0,\ 1.0,\ 0.0,\ -1.0)$. Exponentiate: $7.389,\ 2.718,\ 1.000,\ 0.368$. Sum:
+$11.475$. Divide:
+\[
+  (0.644,\ 0.237,\ 0.087,\ 0.032) .
+\]
+Sums to 1.000. \checkmark\ Note the shape: a score gap of 1.0 became a ratio of about
+$2.7\times$, and the lowest score still gets $3\%$ --- softmax is soft. That is deliberate:
+a hard maximum would have no gradient to learn from.
+\end{worked}
+\end{attempt}
+
+\begin{attempt}{5}{separate the three roles --- query, key, value}
+Using the raw $\vv{x}_i$ for everything conflates three different questions. For a rook on an
+open file:
+\begin{itemize}
+\item \textbf{what am I looking for?} squares along my file, and whatever obstructs them;
+\item \textbf{what do I advertise to others?} "there is a rook here, on this file";
+\item \textbf{what do I pass on when read?} perhaps something else again --- the fact that
+  this file is contested.
+\end{itemize}
+These are three distinct pieces of information and one vector cannot be all of them at once.
+So project the vector three ways, with three learned matrices:
+\[
+  \vv{q}_i = W_Q\,\vv{x}_i \quad(\text{query}),\qquad
+  \vv{k}_i = W_K\,\vv{x}_i \quad(\text{key}),\qquad
+  \vv{v}_i = W_V\,\vv{x}_i \quad(\text{value}).
+\]
+The score becomes $e_{ij} = \vv{q}_i\cdot\vv{k}_j$ --- \emph{does what $i$ is looking for
+match what $j$ advertises?} --- and the thing that is mixed is $\vv{v}_j$.
+
+Notice this makes attention \emph{asymmetric}: $i$ may attend strongly to $j$ while $j$
+ignores $i$. Chess relations are asymmetric (a pinned knight and the pinning bishop are not in
+symmetric situations), so this is a feature.
+\end{attempt}
+
+\begin{attempt}{6}{scale the scores}
+One numerical problem remains. The dot product of two $d$-dimensional vectors is a sum of $d$
+terms, so its typical size grows like $\sqrt{d}$. With $d = 768$ the scores become large, and
+softmax of large numbers is brutal:
+
+\begin{worked}{what large scores do to softmax}
+Two scores differing by 2.0:
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Scores & softmax & \\
+\midrule
+$(2.0,\ 0.0)$   & $(0.881,\ 0.119)$ & a preference \\
+$(20,\ 18)$     & $(0.881,\ 0.119)$ & the same --- only the difference matters \\
+$(200,\ 180)$   & $(1.000,\ 2\times10^{-9})$ & effectively one-hot \\
+\bottomrule
+\end{tabular}
+\end{center}
+The third row is the danger: attention collapses onto a single square and the gradient
+through the other entries vanishes, so the network cannot learn to change its mind. Dividing
+the scores by $\sqrt{d_k}$ keeps them in the first regime regardless of dimension.
+\end{worked}
+\end{attempt}
+
+\begin{finalform}[Scaled dot-product attention]
+\begin{equation}
+  \label{eq:attention}
+  \boxed{\;
+  \text{Attention}(Q,K,V) \;=\; \softmax\!\left(\frac{QK^{\top}}{\sqrt{d_k}}\right)V
+  \;}
+\end{equation}
+where $Q = XW_Q$, $K = XW_K$, $V = XW_V$ are $64\times d_k$, and $QK^{\top}$ is the
+$64\times64$ matrix of scores. Row $i$ of $\softmax(QK^\top/\sqrt{d_k})$ is \textbf{square
+$i$'s attention distribution over the board}, and it is the object rendered as a heatmap in
+your frontend.
+\end{finalform}
+
+\section{A complete attention computation, by hand}
+
+\begin{worked}{three squares, two dimensions}
+Three tokens (think: three squares of interest), $d = d_k = 2$.
+\emph{(Illustrative numbers chosen for clean arithmetic.)}
+\[
+\vv{x}_1 = (1,\,0), \qquad \vv{x}_2 = (0,\,1), \qquad \vv{x}_3 = (1,\,1).
+\]
+Take
+\[
+W_Q = W_K = \begin{pmatrix}1&0\\0&1\end{pmatrix},
+\qquad
+W_V = \begin{pmatrix}1&0\\0&2\end{pmatrix}.
+\]
+Then $\vv{q}_i = \vv{k}_i = \vv{x}_i$, and
+\[
+\vv{v}_1 = (1,0),\qquad \vv{v}_2 = (0,2),\qquad \vv{v}_3 = (1,2).
+\]
+
+\textbf{Step 1 --- raw scores for square 1} ($\vv{q}_1 = (1,0)$):
+\[
+e_{11} = (1,0)\cdot(1,0) = 1,\qquad
+e_{12} = (1,0)\cdot(0,1) = 0,\qquad
+e_{13} = (1,0)\cdot(1,1) = 1 .
+\]
+
+\textbf{Step 2 --- scale} by $\sqrt{d_k} = \sqrt{2} = 1.4142$:
+\[
+(0.7071,\quad 0,\quad 0.7071).
+\]
+
+\textbf{Step 3 --- softmax:} $e^{0.7071} = 2.0281$, $e^{0} = 1$, $e^{0.7071} = 2.0281$;
+sum $= 5.0562$:
+\[
+\boldsymbol{\alpha}_1 = (0.4011,\ 0.1978,\ 0.4011).
+\]
+Square 1 gives $40\%$ of its attention to itself, $40\%$ to square 3, and $20\%$ to square 2
+--- because squares 1 and 3 share a component and square 2 does not.
+
+\textbf{Step 4 --- mix the values:}
+\[
+\vv{x}_1' = 0.4011(1,0) + 0.1978(0,2) + 0.4011(1,2)
+         = (0.4011 + 0.4011,\ \ 0.3956 + 0.8022)
+         = (0.8022,\ 1.1978).
+\]
+
+Square 1 entered the layer as $(1,0)$ and leaves carrying $(0.80,\,1.20)$ --- it has absorbed
+information from the squares it found relevant. That is the whole operation.
+
+\smallskip
+\emph{Check your understanding:} compute $\vv{x}_2'$ yourself (Exercise~\ref{ex:ch11:byhand}).
+You should find square 2 attends most to square 3.
+\end{worked}
+
+\section{From one attention to a transformer layer}
+
+Real layers wrap the operation in three pieces of standard machinery.
+
+\paragraph{Multi-head.} One attention pattern per layer is not enough --- a square may need to
+track its attackers \emph{and} its defenders \emph{and} the pawn structure simultaneously.
+So run $H$ independent attentions in parallel, each with its own $W_Q, W_K, W_V$ of reduced
+width, and concatenate the results:
+\begin{equation}
+  \label{eq:multihead}
+  \text{MultiHead}(X) = \bigl[\text{head}_1 \,\|\, \text{head}_2 \,\|\, \cdots \,\|\,
+  \text{head}_H\bigr]\,W_O .
+\end{equation}
+In \texttt{BT3-768x15x24h}, $H = 24$. Each head produces its own $64\times64$ attention
+matrix, and the heads specialise --- which is what makes Chapter~\ref{ch:attmaps}'s warning
+about averaging them so important.
+
+\paragraph{Residual connections.} Each sub-layer adds to its input rather than replacing it:
+$X \leftarrow X + \text{sublayer}(X)$. This means a layer only has to compute a
+\emph{correction}, and it gives gradients a short path back through fifteen layers. Without
+residuals, deep stacks are close to untrainable.
+
+\paragraph{Layer normalisation and the feed-forward block.} After attention, each square's
+vector is renormalised (subtract the mean, divide by the standard deviation, then apply a
+learned scale and shift) to keep numbers in a sane range. Then each square independently
+passes through a two-layer network of the Chapter~\ref{ch:learned} kind --- the
+\emph{feed-forward} block, typically expanding to $4d$ and back.
+
+\begin{finalform}[One encoder layer]
+\begin{align}
+  Z &= \LN\bigl(X + \text{MultiHead}(X)\bigr), \label{eq:enc1}\\
+  X' &= \LN\bigl(Z + \text{FFN}(Z)\bigr), \qquad
+  \text{FFN}(\vv{z}) = W_2\,\relu(W_1\vv{z} + \vv{b}_1) + \vv{b}_2 . \label{eq:enc2}
+\end{align}
+\end{finalform}
+
+The division of labour is clean and worth remembering:
+
+\begin{keyidea}
+\textbf{Attention moves information between squares. The feed-forward block thinks about one
+square at a time.} Every layer does both: gather what is relevant from elsewhere on the board,
+then process it locally. Fifteen rounds of that is what \texttt{BT3} does to a position before
+it says anything.
+\end{keyidea}
+
+\section{Reading the name of the network}
+
+\begin{center}
+\texttt{BT3-768x15x24h}
+\end{center}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\texttt{768} & embedding width $d$ & each square is 768 numbers \\
+\texttt{15}  & layers & fifteen rounds of Equations \eqref{eq:enc1}--\eqref{eq:enc2} \\
+\texttt{24h} & heads & 24 attention patterns per layer \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{worked}{how many attention matrices in one evaluation?}
+Each head at each layer produces one $64\times64$ matrix:
+\[
+  15 \times 24 = 360 \text{ matrices}, \qquad 360 \times 64 \times 64 = 1{,}474{,}560
+  \text{ attention weights}
+\]
+for a single position. Your saliency display averages some of these into one $8\times8$
+picture. Chapter~\ref{ch:attmaps} is about what that averaging destroys --- but note the
+compression ratio now: 1.47 million numbers into 64.
+\end{worked}
+
+And a scale note, so the cost of the interpretability work in Part~\textsc{v} is not a
+surprise: one forward pass of BT3 on this machine's CPU takes on the order of a second, which
+is why every real number in this book came from the smaller \texttt{791556} net. The
+difference is not conceptual --- same architecture family, fewer parameters.
+
+\begin{repobox}[title={in this repository}]
+\texttt{backend/neural\_vision.py} attaches forward hooks to these modules through
+\texttt{lczerolens}, which is how the attention heatmap is produced: it reaches inside
+Equation~\eqref{eq:multihead} and captures $\softmax(QK^\top/\sqrt{d_k})$ before it is
+multiplied by $V$. The memory note in your project about black-to-move orientation is a
+statement about which square index $i$ corresponds to which board square --- a detail that
+Equation~\eqref{eq:attention} is entirely silent about, and which therefore has to be got
+right by hand.
+\end{repobox}
+
+\begin{exercises}
+
+\exhead[dot products]{ch11:dots} Compute $\vv{a}\cdot\vv{b}$ for $\vv{a} = (2,-1,0)$ and
+$\vv{b} = (1,3,4)$; then for $\vv{b} = (2,-1,0)$. Which pair is "more compatible", and what
+does a negative dot product mean in attention terms?
+
+\exhead[softmax]{ch11:softmax} Compute the softmax of $(3,\ 1,\ 0,\ 0)$ and of
+$(6,\ 2,\ 0,\ 0)$. Which is sharper? Now compute the softmax of $(1003,\ 1001,\ 1000,\ 1000)$
+and comment on what the identical answer to the first tells you about softmax.
+
+\exhead[attention by hand]{ch11:byhand} Using the setup of §11.4, compute $\vv{x}_2'$ and
+$\vv{x}_3'$ in full: raw scores, scaled scores, softmax, mixed value. Which square does
+square 2 attend to most, and does that make sense from the vectors?
+
+\exhead[asymmetry]{ch11:asym} With $W_Q = W_K$ as in §11.4, is $\alpha_{ij} = \alpha_{ji}$?
+Compute $\alpha_{13}$ and $\alpha_{31}$ to check. Now argue why real networks make
+$W_Q \neq W_K$, using a chess relation that is genuinely one-directional.
+
+\exhead[the scaling]{ch11:scaling} Suppose scores are typically of size $\sqrt{d_k}$. Compute
+the softmax of $(\sqrt{768},\ 0)$ without scaling, and of $(\sqrt{768}/\sqrt{768},\ 0)$ with
+it. State in one sentence what training would look like in the first case.
+
+\exhead[why three matrices]{ch11:threemat} Give a chess example, other than the rook one in
+§11.3, where "what I am looking for" and "what I advertise" are clearly different. Then say
+what would break if $W_Q$, $W_K$ and $W_V$ were forced to be equal.
+
+\exhead[convolution vs attention]{ch11:conv} A convolutional layer mixes each square with its
+8 neighbours. How many layers are needed before a1 can be influenced by h8? How many
+attention layers? What does the answer suggest about which architecture better suits a
+bishop?
+
+\exhead[counting]{ch11:counting} How many attention weights does one BT3 forward pass produce
+(§11.5)? If you displayed one $8\times8$ heatmap per head per layer, how many pictures would
+that be, and how would you choose which to show a user?
+
+\exhead[what a row means]{ch11:row} Row $i$ of the attention matrix sums to 1. What does
+column $j$ sum to, and why is that not 1? Which of the two --- "where did e4 look?" or "who
+looked at e4?" --- is a row, and which would you rather display over a chessboard?
+
+\exhead[residuals]{ch11:residual} Explain in two sentences why $X + \text{sublayer}(X)$ makes
+a 15-layer stack trainable, and what it implies about how much any one layer changes the
+representation. Relate your answer to the idea of a layer computing a "correction".
+
+\exhead[design]{ch11:design} Your tool wants to show "what the network is looking at" for a
+single square the user clicks. Which row or column, of which head, of which layer, would you
+display? List the choices you must make, and note which of them Chapter~\ref{ch:attmaps} will
+tell you are dangerous.
+
+\end{exercises}

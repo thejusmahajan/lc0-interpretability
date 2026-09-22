@@ -1,0 +1,234 @@
+\chapter{Attention maps: four ways to fool yourself}
+\label{ch:attmaps}
+
+\begin{objectives}
+\begin{itemize}
+\item Compute what averaging many attention heads does to a heatmap, and why the answer is
+  "destroys it".
+\item Explain why a high attention weight is not the same as importance.
+\item Recognise the artefacts forced by softmax --- attention has to go somewhere.
+\item State the orientation question that every board-overlay must answer, and why getting it
+  wrong produces a plausible-looking picture.
+\item Propose displays that survive all four objections.
+\end{itemize}
+\end{objectives}
+
+\section{What you are looking at}
+
+Chapter~\ref{ch:attention} produced, for each head $h$ of each layer $l$, a $64\times64$
+matrix $A^{(l,h)}$ whose row $i$ is a probability distribution: \emph{how square $i$ divided
+its attention over the board}. A heatmap on a chessboard is some reduction of that object down
+to 64 numbers.
+
+The reduction is where all the danger is. Recall the compression:
+\[
+  15 \text{ layers} \times 24 \text{ heads} \times 64 \times 64
+  \;=\; 1{,}474{,}560 \text{ numbers} \;\longrightarrow\; 64 .
+\]
+Any such reduction is a strong claim about what matters. This chapter is about four ways the
+claim goes wrong --- and the first one is almost certainly live in your project right now.
+
+\section{Trap 1: averaging heads destroys the signal}
+
+The natural reduction is to average: over heads, over layers, sometimes over both. It is also
+close to the worst available choice, because \textbf{heads specialise, and specialists
+disagree}.
+
+\begin{worked}{what averaging does to disagreeing heads}
+Suppose, over a single square's row, four heads attend as follows across four candidate
+squares \emph{(illustrative)}:
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+ & sq A & sq B & sq C & sq D \\
+\midrule
+head 1 (say, attackers) & $0.85$ & $0.05$ & $0.05$ & $0.05$ \\
+head 2 (say, defenders) & $0.05$ & $0.85$ & $0.05$ & $0.05$ \\
+head 3 (say, pawn structure) & $0.05$ & $0.05$ & $0.85$ & $0.05$ \\
+head 4 (say, king safety) & $0.05$ & $0.05$ & $0.05$ & $0.85$ \\
+\midrule
+\textbf{mean} & $\mathbf{0.25}$ & $\mathbf{0.25}$ & $\mathbf{0.25}$ & $\mathbf{0.25}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Every head is sharply informative; the average is exactly uniform. Averaging turned four
+strong, specific statements into "the network looks at everything equally".
+\end{worked}
+
+The general principle: averaging probability distributions moves the result towards the
+\emph{most diffuse} of them, and a mean over $H$ diverse distributions has entropy at least as
+large as the mean of their entropies. A diffuse heatmap is therefore the \emph{expected}
+outcome of averaging specialists, whether or not the network has anything specific to say.
+
+\begin{keyidea}
+If your heatmap always looks like a soft cloud around the pieces, that is very likely an
+artefact of the averaging, not a fact about the network. \textbf{The test is cheap:} render
+two or three individual heads at one layer and see whether they are sharp. If they are, the
+averaging is the problem, not the network.
+\end{keyidea}
+
+\begin{repobox}[title={in this repository}]
+The project notes describe the saliency map as "currently averaged over all layers/heads, so
+it is diffuse". This chapter says the diffuseness is predicted by the averaging alone. Before
+any deeper work, render single heads --- it costs nothing (the matrices are already extracted)
+and it decides whether there is a signal to display at all.
+\end{repobox}
+
+\section{Trap 2: attention weight is not importance}
+
+The second failure is subtler, and it is the subject of a genuine research literature
+(the "attention is not explanation" debate, from around 2019). Three distinct reasons a
+heavily-attended square may not matter:
+
+\begin{enumerate}
+\item \textbf{The value vector may be small.} The output is $\sum_j \alpha_{ij}\vv{v}_j$. A
+  large $\alpha_{ij}$ multiplied into a near-zero $\vv{v}_j$ contributes nothing. Attention
+  says where you looked; the value says whether there was anything to bring back.
+\item \textbf{The residual stream may dominate.} Each layer \emph{adds} to what was already
+  there (Chapter~\ref{ch:attention}, residual connections). If the attention block's
+  contribution is small relative to the existing vector, the whole attention pattern is a
+  minor correction regardless of its shape.
+\item \textbf{Later layers may discard it.} Information moved at layer 4 can be ignored by
+  layers 5--15. This is Chapter~\ref{ch:probes}'s "present but unused", in a different guise.
+\end{enumerate}
+
+\begin{keyidea}
+\textbf{The honest caption for an attention heatmap is "where this square read from at this
+layer", not "what the engine thinks is important".} The second is an importance claim, and
+importance claims require the interventions of Chapter~\ref{ch:probes} §13.3.3 --- ablate the
+attention edge and show the output changes.
+\end{keyidea}
+
+\section{Trap 3: attention has to go somewhere}
+
+Each row is a softmax, so it sums to 1 whether or not the square has anything to attend to. A
+square with nothing relevant nearby must still distribute its full unit of attention. This
+produces two artefacts you will see and misread:
+
+\begin{itemize}
+\item \textbf{Sinks.} Networks commonly learn to dump surplus attention on one or two
+  "parking" positions --- in language models this is famously the first token. If one square
+  attracts heavy attention across many heads and positions, suspect a sink before concluding
+  it is a strategically vital square. \emph{Test: does it attract the same attention in
+  unrelated positions?}
+\item \textbf{Self-attention.} The diagonal $\alpha_{ii}$ is often the largest entry, meaning
+  "keep what I have". It is usually uninformative and, if included in a heatmap's colour
+  scale, it flattens everything else. Consider excluding or reporting it separately.
+\end{itemize}
+
+\begin{worked}{the same picture from two causes}
+Consider a row with a big spike on square X. Two possible explanations, indistinguishable
+from the heatmap alone:
+\begin{itemize}
+\item the network is tracking a real relation to X;
+\item nothing here is relevant, and X is where this head parks its surplus.
+\end{itemize}
+The distinguishing experiment is a \textbf{contrast}: evaluate a near-identical position with
+the relation removed (move the piece, block the diagonal) and re-render. A real relation moves
+with its cause; a sink does not. Contrast maps are strictly more informative than absolute
+maps and cost one extra forward pass.
+\end{worked}
+
+\section{Trap 4: orientation, and why it fails silently}
+
+The network's 64 tokens are indexed in some order. Leela's input planes are conventionally
+oriented \emph{from the side-to-move's perspective}: when Black is to move, the board is
+flipped so that the mover's pieces are always at the bottom. If your display maps token index
+$i$ to a fixed board square without accounting for that, then \textbf{every heatmap for a
+black-to-move position is reflected}.
+
+\begin{pitfall}
+This is the most dangerous bug class in the whole chapter, because the output is not obviously
+wrong. A reflected heatmap still looks like a heatmap; it still glows near pieces; it still
+tells a story --- just the wrong one, and only in half of all positions. It will pass every
+test that does not specifically check orientation, including "looks plausible to an expert".
+
+Your project has already hit this once: the memory note recording that a black-to-move
+orientation fix landed as an explicit \texttt{saliency\_absolute(fen)} function, with the older
+frame-relative version left in place, is exactly this bug. Note the residual hazard: two
+functions, one correct, one not, and nothing in the type system to stop the wrong one being
+called.
+\end{pitfall}
+
+The general lesson is worth stating beyond this one bug: \textbf{every quantity extracted from
+the network carries a frame}, and frames are invisible in the numbers. Values are
+side-to-move-relative (Chapter~\ref{ch:uct}). Policy indices are move-encoding-relative. Board
+tokens are orientation-relative. Each is a silent convention, and each has produced a
+plausible-looking wrong picture in some chess tool. A useful discipline is to make the frame
+part of the name of every function that returns one.
+
+\section{Displays that survive}
+
+Given all four traps, here is what can honestly be shown, roughly in order of increasing
+strength:
+
+\begin{center}
+\begin{tabular}{@{}p{5.1cm}p{8.2cm}@{}}
+\toprule
+Display & What it honestly claims \\
+\midrule
+Single head, single layer, one row & "At layer $l$, head $h$, square $e4$ read mainly from
+these squares." Weak but true. \\
+\addlinespace
+Contrast map (this position minus a modified one) & "This part of the pattern depends on the
+relation you removed." Much stronger. \\
+\addlinespace
+Ablation map (zero the edge, measure policy change) & "Removing this changed the engine's
+move by this much." An importance claim, earned. \\
+\addlinespace
+Attention averaged over all heads and layers & Very little. Prefer not to. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{keyidea}
+The strongest visual claim you can make about a neural network is a \textbf{difference}, not a
+level. "This changed when I changed that" is checkable and causal; "this square is bright" is
+neither. If the project's visual channel is to carry real weight --- and the design notes argue
+it should --- contrast and ablation maps are where its credibility will come from.
+\end{keyidea}
+
+\begin{exercises}
+
+\exhead[averaging]{ch14:averaging} Three heads attend to squares $(A,B,C)$ with distributions
+$(0.9,0.05,0.05)$, $(0.05,0.9,0.05)$, $(0.45,0.45,0.1)$. Compute the mean. Compute the
+entropy of each head and of the mean. Which is more diffuse than \emph{any} individual head,
+and does that surprise you?
+
+\exhead[the cheap test]{ch14:cheaptest} Write out, in five steps, the experiment that
+determines whether your current diffuse heatmap is caused by averaging or by the network. What
+result would tell you the network genuinely has nothing sharp to say?
+
+\exhead[value magnitude]{ch14:valuemag} Square $i$ attends $0.8$ to square $j$, but
+$\lVert\vv{v}_j\rVert$ is a tenth of the typical value norm. How much of $i$'s new content
+comes from $j$, relative to a square attended at $0.2$ with a typical value vector? What
+should the heatmap have shown instead?
+
+\exhead[sinks]{ch14:sinks} You notice that square h1 receives high attention in $70\%$ of the
+positions you look at, across many heads. Give two hypotheses and the experiment that
+separates them. Which would you bet on, and why?
+
+\exhead[the diagonal]{ch14:diagonal} Should $\alpha_{ii}$ be included in a heatmap? Argue both
+ways, then propose a display convention and justify it in one sentence.
+
+\exhead[orientation]{ch14:orient} A tool shows attention for a black-to-move position and the
+heatmap glows around White's king. Give the two possible explanations. Describe a two-minute
+test using a single position that settles it.
+
+\exhead[frames]{ch14:frames} List every frame-dependent quantity you have met in this book
+(there are at least four). For each, name the convention and one symptom of getting it wrong.
+
+\exhead[a contrast map]{ch14:contrast} Design a contrast experiment for the Morphy position
+before 16.Qb8+: what modified position would you compare against, and what would you expect to
+see if the network's attention is tracking the mating idea? What would you conclude if the two
+maps were identical?
+
+\exhead[an honest caption]{ch14:caption} Write the caption your frontend should display under
+an attention heatmap. It must be short enough to fit and true enough to survive this chapter.
+
+\exhead[the design question]{ch14:designq} Your project's design notes argue that a purely
+visual translation may be more honest than a textual one, because a picture makes fewer
+explicit claims. Using this chapter, argue the opposite: give two ways a picture can make a
+\emph{stronger} false claim than a sentence would.
+
+\end{exercises}

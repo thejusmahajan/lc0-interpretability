@@ -1,0 +1,64 @@
+\documentclass[11pt,a4paper,twoside,openright]{book}
+\input{preamble}
+
+\title{\vspace{-2cm}\Huge\bfseries The Engine's Mind\\[0.6em]
+  \Large\normalfont A Self-Tutor in Neural Monte-Carlo Tree Search\\[0.3em]
+  \large\itshape From one slot machine to Leela's suppressed sacrifices}
+\author{Written for the \textsc{Chess Speak Out Loud} project}
+\date{Draft of \today}
+
+\begin{document}
+
+\frontmatter
+\maketitle
+
+\input{chapters/ch00_how_to_use}
+
+\tableofcontents
+
+\mainmatter
+
+\part{The Problem, and the Two Questions}
+\input{chapters/ch01_what_an_engine_does}
+\input{chapters/ch02_currency_of_evaluation}
+
+\part{Searching by Gambling Well}
+\input{chapters/ch03_one_machine}
+\input{chapters/ch04_many_machines}
+\input{chapters/ch05_machines_to_trees}
+\input{chapters/ch06_building_puct}
+\input{chapters/ch07_search_by_hand}
+
+\part{The Search as It Really Runs}
+\input{chapters/ch08_engineering_reality}
+\input{chapters/ch09_reading_a_tree}
+
+\part{The Oracle: What the Network Is}
+\input{chapters/ch10_learned_formula}
+\input{chapters/ch11_attention}
+\input{chapters/ch12_two_heads}
+
+\part{Opening the Skull}
+\input{chapters/ch13_probes}
+\input{chapters/ch14_attention_maps}
+\input{chapters/ch15_lookahead}
+
+\part{Bending the Engine}
+\input{chapters/ch16_style_as_objective}
+\input{chapters/ch17_real_sharpness}
+
+\part{Making It Speak}
+\input{chapters/ch18_numbers_to_sentences}
+\input{chapters/ch19_capstone}
+
+\appendix
+\part*{Appendices}
+\addcontentsline{toc}{part}{Appendices}
+\input{chapters/appA_notation}
+\input{chapters/appB_solutions}
+\input{chapters/appC_glossary}
+\input{chapters/appD_engine_data}
+\input{chapters/appE_repo_map}
+\input{chapters/appF_sources}
+
+\end{document}

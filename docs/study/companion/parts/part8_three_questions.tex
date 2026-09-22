@@ -1,0 +1,114 @@
+\chapter{Three Questions, Answered with the Numbers Above}
+\label{ch:three_questions}
+
+\section{Question 1: ``Won't a Cluster of Bad Moves Drag Down the Parent's Average?''}
+
+\begin{studentq}
+``I go to move a1 from state s1 and it has a high value. All the other moves are bad or even blunders. This would drastically reduce the average value of the parent move that caused s1.''
+\end{studentq}
+
+This is the sharpest question in the whole log, and the answer is that \textbf{the average is not taken over moves. It is taken over visits} --- and visits are distributed wildly unequally.
+
+After four iterations:
+\begin{center}
+\begin{tabular}{ll}
+  \toprule
+  Move & Search Visits \\
+  \midrule
+  \textbf{Kd6} & visited 1 time \\
+  \textbf{Kf6} & visited 2 times \\
+  \textbf{Kf5} & visited 0 times $\leftarrow$ \textit{contributes NOTHING to any average} \\
+  \textbf{Kd5} & visited 0 times $\leftarrow$ \textit{contributes NOTHING to any average} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+An unvisited blunder contributes exactly zero terms to $W$. A blunder that \textit{is} visited once contributes one bad term --- then its $U$ halves, its $Q$ collapses to the bad measured value, and it is never selected again. Run to 10,000 nodes and the split is typically 97\%+ of visits on the best one or two moves.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\input{figures/fig_c_visits.tex}
+\captionof{figure}{\textbf{Asymptotic visit concentration.} Blunders are abandoned after $\le 1$ visit and contribute negligibly to total value sum $W$.}
+\label{fig:visits}
+\end{minipage}
+\end{center}
+
+Watch the two bad moves being squeezed out \textbf{without ever being played}:
+\begin{itemize}[leftmargin=2em]
+  \item Before iteration 1: \texttt{Kf5} $= 1.06990$ ($0.69$ behind the leader)
+  \item Before iteration 2: \texttt{Kf5} $= 0.84403$ ($0.68$ behind)
+  \item Before iteration 3: \texttt{Kf5} $= 0.79739$ ($0.73$ behind, and falling)
+\end{itemize}
+They fall because the FPU reduction keeps growing as good moves absorb policy mass. The engine becomes progressively more sceptical of the untried remainder.
+
+So the parent's value never becomes ``the average of one good move and three blunders.'' It becomes, very nearly, ``the value of the good moves'' --- because the good moves supplied essentially every sample.
+
+\begin{keyidea}[title={The Single Most Important Idea in MCTS}]
+Uniform search averages over moves. MCTS \textbf{samples} moves in proportion to how promising they look, so the average is dominated by the lines actually worth playing.
+\end{keyidea}
+
+\section{Question 2: ``Why Visit a Move Again? What Is the Point?''}
+
+\begin{studentq}
+``Say if the first move still has the highest score even when the curiosity factor is halved, it will again be selected. What is the point of visiting it again? Go on the same move until the other move gets selected?''
+\end{studentq}
+
+Iteration 3 selects \texttt{Kf6} for the second time. What physically happens is \textbf{not} a repeat of iteration 2.
+
+The first visit to \texttt{Kf6} created the child position and evaluated it. That child now exists in the tree, with \textbf{its own arrows} and its own statistics.
+
+So the second visit does not stop there. It passes \textit{through} and applies the same selection rule one level down, choosing among Black's replies, and evaluates a position \textbf{two plies deep}.
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\input{figures/fig_c_depth.tex}
+\captionof{figure}{\textbf{Emergent depth.} Revisiting a move passes through the expanded child to evaluate a deeper frontier node.}
+\label{fig:depth}
+\end{minipage}
+\end{center}
+
+\begin{keyidea}[title={Depth Is Emergent}]
+Search never schedules fixed plies. Every time a move wins selection, it walks down the branch and pushes the frontier \textbf{one level deeper}!
+\end{keyidea}
+
+That is where that lower score $x_2 = +0.95128$ came from in iteration 3: it was not a re-evaluation of \texttt{Kf6}, it was an evaluation of \textbf{Black's best reply} two half-moves down the board.
+
+\begin{center}
+\begin{tabular}{lll}
+  \toprule
+  Visit 1 & evaluates the move itself & (depth 1) \\
+  Visit 2 & evaluates the opponent's best reply & (depth 2) \\
+  Visit 3 & evaluates our reply to their reply & (depth 3) \\
+  Visit $k$ & evaluates $k$ plies deep \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Revisiting a move is how MCTS looks ahead.} It is the \textit{only} way MCTS looks ahead.
+
+\section{Question 3: ``Why Does the Network Evaluate Positions Rather Than Moves?''}
+
+\begin{studentq}
+``No, the value comes from the position s before Kd6 and not after the valuation of position of Kd6. The bonus is added to the prior value of `s' and not the current state after the move Kd6.''
+\end{studentq}
+
+This was the core confusion that triggered this whole guide. The confusion is natural: in human language we say ``\texttt{Kd6} is a winning move,'' so it feels like the move itself has a value.
+
+In the math:
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{Moves do not have intrinsic values.} Moves are transitions.
+  \item \textbf{Positions have values.} A position is a state of the 64 squares.
+  \item A move's ``value'' is simply the value of the position it leads to (negated, because the opponent is to move there).
+\end{itemize}
+
+When the search wants to know ``is \texttt{Kd6} good?'', it does not evaluate ``\texttt{Kd6}''. It plays \texttt{Kd6} on an internal board, hands the \textit{resulting position} to the network, gets back $V(\text{child})$, negates it, and stores that on the arrow.
+
+\begin{established}[Summary of the Three Confusions]
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{Where does $V$ come from?} The position \textit{after} the move, negated. Never the position before.
+  \item \textbf{Where does $Q$ start?} At a borrowed parent value (the FPU placeholder), which is \textit{thrown away} the instant a real evaluation arrives.
+  \item \textbf{What is a revisit?} A deeper step down the tree. Never a duplicate calculation.
+\end{enumerate}
+\end{established}

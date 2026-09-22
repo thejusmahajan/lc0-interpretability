@@ -1,0 +1,159 @@
+% ===========================================================================
+%  Preamble for "The Engine's Mind" -- shared by the book and any excerpt.
+% ===========================================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[a4paper,margin=1in,headheight=14pt]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{etoolbox}
+\usepackage{fancyhdr}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{positioning,calc,arrows.meta,shapes.geometric,fit,backgrounds}
+\usepackage{xskak}
+\usepackage{caption}
+\usepackage[hidelinks,colorlinks=true,linkcolor=NavyBlue,urlcolor=NavyBlue,
+            citecolor=NavyBlue]{hyperref}
+
+% --------------------------------------------------------------------------
+% Colours
+% --------------------------------------------------------------------------
+\definecolor{NavyBlue}{HTML}{1F3B73}
+\definecolor{BuildBlue}{HTML}{2C5AA0}
+\definecolor{IdeaGreen}{HTML}{2E6E4E}
+\definecolor{PitfallRed}{HTML}{9B2C2C}
+\definecolor{WorkGrey}{HTML}{4A4A4A}
+\definecolor{DataTeal}{HTML}{1C6E72}
+\definecolor{HypPurple}{HTML}{5B3A87}
+\definecolor{PaleGrey}{HTML}{F4F4F6}
+
+% --------------------------------------------------------------------------
+% Headers
+% --------------------------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\small\nouppercase{\leftmark}}
+\fancyhead[RO]{\small\nouppercase{\rightmark}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+% --------------------------------------------------------------------------
+% Math shorthands
+% --------------------------------------------------------------------------
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator{\softmax}{softmax}
+\DeclareMathOperator{\relu}{ReLU}
+\DeclareMathOperator{\LN}{LayerNorm}
+\DeclareMathOperator{\Ent}{H}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\given}{\,|\,}
+\newcommand{\Qsa}{Q(s,a)}
+\newcommand{\Nsa}{N(s,a)}
+\newcommand{\Usa}{U(s,a)}
+\newcommand{\Psa}{P(a \given s)}
+\newcommand{\vv}[1]{\mathbf{#1}}
+
+% --------------------------------------------------------------------------
+% Boxes
+% --------------------------------------------------------------------------
+\newtcolorbox{keyidea}[1][]{
+  breakable, enhanced, colback=IdeaGreen!5, colframe=IdeaGreen,
+  boxrule=0.6pt, left=6pt, right=6pt, top=5pt, bottom=5pt,
+  fonttitle=\bfseries, title={Key idea}, #1}
+
+\newtcolorbox{pitfall}[1][]{
+  breakable, enhanced, colback=PitfallRed!4, colframe=PitfallRed,
+  boxrule=0.6pt, left=6pt, right=6pt, top=5pt, bottom=5pt,
+  fonttitle=\bfseries, title={Where people go wrong}, #1}
+
+\newtcolorbox{notationbox}[1][]{
+  breakable, enhanced, colback=PaleGrey, colframe=WorkGrey!60,
+  boxrule=0.5pt, left=6pt, right=6pt, fonttitle=\bfseries,
+  title={Notation}, #1}
+
+% Confidence tiers -- the honesty apparatus (see chapter 0).
+\newtcolorbox{tier}[2][]{
+  breakable, enhanced, colback=#2!4, colframe=#2, boxrule=0.6pt,
+  left=6pt, right=6pt, top=4pt, bottom=4pt, fonttitle=\bfseries, #1}
+
+\newenvironment{established}[1][]
+  {\begin{tier}[title={Confidence: established}#1]{BuildBlue}}{\end{tier}}
+\newenvironment{researchfinding}[1][]
+  {\begin{tier}[title={Confidence: published research finding}#1]{DataTeal}}{\end{tier}}
+\newenvironment{hypothesis}[1][]
+  {\begin{tier}[title={Confidence: this project's hypothesis --- not yet verified}#1]{HypPurple}}{\end{tier}}
+\newenvironment{realdata}[1][]
+  {\begin{tier}[title={Real engine output}#1]{DataTeal}}{\end{tier}}
+
+% --------------------------------------------------------------------------
+% Formula-building steps: the spine of the book's method
+% --------------------------------------------------------------------------
+\newcounter{bstep}[chapter]
+\newtcolorbox{buildbox}[1]{
+  breakable, enhanced, colback=BuildBlue!4, colframe=BuildBlue,
+  boxrule=0.6pt, left=6pt, right=6pt, top=4pt, bottom=4pt,
+  fonttitle=\bfseries, title={#1}}
+\newenvironment{attempt}[2]{%
+  \begin{buildbox}{Attempt #1: #2}}{\end{buildbox}}
+\newenvironment{finalform}[1][The formula, final form]{%
+  \begin{buildbox}{#1}}{\end{buildbox}}
+
+% --------------------------------------------------------------------------
+% Worked examples and exercises
+% --------------------------------------------------------------------------
+\newcounter{wex}[chapter]
+\renewcommand{\thewex}{\thechapter.\arabic{wex}}
+\newenvironment{worked}[1]{%
+  \refstepcounter{wex}%
+  \par\medskip
+  \begin{tcolorbox}[breakable, enhanced, colback=white, colframe=WorkGrey!70,
+     boxrule=0.5pt, left=6pt, right=6pt, top=4pt, bottom=4pt,
+     fonttitle=\bfseries, title={Worked example \thewex\ --- #1}]}%
+  {\end{tcolorbox}\par\medskip}
+
+\newcounter{exer}[chapter]
+\renewcommand{\theexer}{\thechapter.\arabic{exer}}
+% \exhead[short tag]{label}  -- label is used by \solutionto in appendix B
+\newcommand{\exhead}[2][]{%
+  \refstepcounter{exer}\label{ex:#2}\par\medskip\noindent
+  \textbf{Exercise \theexer}\ifblank{#1}{}{\ \textit{(#1)}}\quad\ignorespaces}
+\newenvironment{exercises}{%
+  \section*{Exercises}\addcontentsline{toc}{section}{Exercises}}{}
+
+\newcommand{\solutionto}[1]{%
+  \par\medskip\noindent\textbf{Solution \ref{#1}.}\quad\ignorespaces}
+
+% Chapter-opening "what you will be able to do" block
+\newtcolorbox{objectives}[1][]{
+  breakable, enhanced, colback=PaleGrey, colframe=NavyBlue,
+  boxrule=0.7pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  fonttitle=\bfseries, title={After this chapter you can}, #1}
+
+% Code / repo pointer
+\newtcolorbox{repobox}[1][]{
+  breakable, enhanced, colback=white, colframe=WorkGrey!50, boxrule=0.5pt,
+  left=6pt, right=6pt, fonttitle=\bfseries\ttfamily,
+  title={in this repository}, #1}
+
+% --------------------------------------------------------------------------
+% Chess board defaults
+% --------------------------------------------------------------------------
+\setchessboard{
+  showmover=true,
+  boardfontsize=15pt,
+  labelfontsize=7pt,
+  moverstyle=triangle,
+  linewidth=0.4pt}
+\newcommand{\minidiagram}[1]{\chessboard[setfen=#1,boardfontsize=13pt,labelfontsize=6pt]}
+
+% Tighter lists
+\setlist[itemize]{itemsep=2pt,topsep=3pt}
+\setlist[enumerate]{itemsep=2pt,topsep=3pt}

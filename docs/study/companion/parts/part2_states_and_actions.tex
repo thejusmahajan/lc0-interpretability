@@ -1,0 +1,33 @@
+\chapter{State $s$ and Action $a$}
+\label{ch:states_actions}
+
+\begin{studentq}
+``Action `a' is essentially state `s' because a is the causal factor of s. Why then differentiate these two? A new move a means a new position s. Isn't it?''
+\end{studentq}
+
+You are right that in chess they are linked deterministically:
+\begin{equation}
+  s' = \text{Transition}(s, a) \quad \text{(play move } a \text{ in position } s, \text{ arrive at } s'\text{)}
+\end{equation}
+
+So why keep two symbols? Because they live in different places in the tree, and they hold different numbers.
+
+\begin{center}
+\input{figures/fig_c_circles_arrows.tex}
+\captionof{figure}{\textbf{The core ontological distinction.} Circles are board positions ($s$) where $V(s)$ lives; arrows are moves ($a$) where search statistics ($P, n, W, Q$) live.}
+\label{fig:circles_arrows}
+\end{center}
+
+Read it out loud once:
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{$s$ is a circle.} A board. Something you could set up with real pieces.
+  \item \textbf{$a$ is an arrow.} A choice. Not a board --- you cannot set up an arrow.
+\end{itemize}
+
+\begin{established}[The Statistics Live on the Arrows, Not on the Circles]
+The visit count $n$, the running total $W$, and the average quality $Q$ are all properties of an \textbf{edge}. When the guide writes $Q(s, a)$, it means: ``the quality of the arrow $a$ leaving circle $s$.'' It needs both symbols because the same move name (\texttt{Kd6}) means something different from a different position.
+\end{established}
+
+\begin{keyidea}[title={Your Own Summary, Which Was Correct}]
+\textit{``$a$ is never a position. $s$ is the position prior to the moves $a$.''} Exactly. And the child positions $s'$ are circles again, each with their own four arrows leaving them. That is how the tree grows.
+\end{keyidea}

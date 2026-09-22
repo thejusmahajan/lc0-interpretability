@@ -1,0 +1,44 @@
+% fig_c_ushrink.tex -- U decay against visit count n
+\begin{tikzpicture}[scale=0.82, every node/.style={font=\small}]
+  % Axes
+  \draw[WorkGrey, line width=0.7pt, ->] (0,0) -- (6.5, 0) node[right, font=\footnotesize] {Visits $n(a)$};
+  \draw[WorkGrey, line width=0.7pt, ->] (0,0) -- (0, 4.4) node[above, font=\footnotesize] {Curiosity Bonus $U(a)$};
+
+  % Gridlines
+  \foreach \y/\val in {1.0/0.20, 2.0/0.40, 3.0/0.60, 4.0/0.80} {
+    \draw[WorkGrey!30, line width=0.3pt] (0, \y) -- (6.0, \y);
+    \node[left, font=\tiny, text=WorkGrey] at (0, \y) {\val};
+  }
+  \foreach \x in {0, 1, 2, 3, 4, 5} {
+    \draw[WorkGrey, line width=0.5pt] (\x, 0.05) -- (\x, -0.05);
+    \node[below, font=\footnotesize] at (\x, -0.05) {$n{=}\x$};
+  }
+
+  % High P move (Kd6: P = 0.4513)
+  \draw[BuildBlue, line width=1.8pt] 
+    (0, 3.938) -- (1, 1.969) -- (2, 1.313) -- (3, 0.984) -- (4, 0.788) -- (5, 0.656);
+
+  \foreach \x/\y/\lbl in {0/3.938/0.788, 1/1.969/0.394, 2/1.313/0.263, 3/0.984/0.197, 4/0.788/0.158, 5/0.656/0.131} {
+    \fill[BuildBlue] (\x, \y) circle (2.5pt);
+    \node[above right=1pt, font=\tiny\bfseries, text=BuildBlue] at (\x, \y) {\lbl};
+  }
+
+  % Low P move (Kf5: P = 0.0538)
+  \draw[PitfallRed, line width=1.4pt, dashed] 
+    (0, 0.469) -- (1, 0.235) -- (2, 0.156) -- (3, 0.117) -- (4, 0.094) -- (5, 0.078);
+  \foreach \x/\y in {0/0.469, 1/0.235, 2/0.156, 3/0.117, 4/0.094, 5/0.078} {
+    \fill[PitfallRed] (\x, \y) circle (2pt);
+  }
+  \node[above=2pt, font=\tiny, text=PitfallRed] at (0, 0.469) {0.094};
+
+  % Halving callout
+  \draw[GoldPath, line width=1.2pt, -{Stealth[length=2.5mm]}] (1.8, 3.2) -- (0.8, 2.3);
+  \node[draw=GoldPath, fill=white, rounded corners=2pt, font=\scriptsize\bfseries, text=GoldPath, align=center] at (3.2, 3.5) {%
+    First Visit Halving:\\
+    $\frac{1}{1+0} \to \frac{1}{1+1} \implies \mathbf{50\%\ \text{drop!}}$%
+  };
+
+  % Labels
+  \node[font=\footnotesize\bfseries, text=BuildBlue, anchor=west] at (3.5, 1.8) {High-$P$ Move (Kd6, $P=45.1\%$)};
+  \node[font=\footnotesize\bfseries, text=PitfallRed, anchor=west] at (3.5, 0.6) {Low-$P$ Move (Kf5, $P=5.4\%$)};
+\end{tikzpicture}

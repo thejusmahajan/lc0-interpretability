@@ -1,0 +1,429 @@
+\chapter{A complete search by hand}
+\label{ch:byhand}
+
+\begin{objectives}
+\begin{itemize}
+\item Execute eight full iterations of Leela's search with pencil and paper --- selection,
+  expansion, evaluation, backpropagation --- and match the engine's own numbers to five
+  decimal places.
+\item Watch the search deepen along its main line without being told to.
+\item Watch a refutation happen: a move examined once, scored $0.000$, and abandoned ---
+  with independent confirmation that abandoning it was correct.
+\item Explain which number finally chooses the move played, and why it is not $Q$.
+\item Discover, by experiment, that evaluating a position from a bare FEN is not the same as
+  evaluating it in a game.
+\end{itemize}
+\end{objectives}
+
+\section{The position, and the truth about it}
+
+Everything in this chapter is real. The priors, the values, the selections and the resulting
+tree are what \texttt{engine/lc0.exe} with \texttt{791556.pb.gz} actually did on this
+machine; the arithmetic below is reproduced by \texttt{tools/simulate\_search.py}, which
+checks itself against the engine and refuses to disagree with it.
+
+\begin{center}
+\chessboard[setfen=4k3/8/4K3/4P3/8/8/8/8 w - - 0 1, boardfontsize=19pt]
+\end{center}
+
+\noindent White: Ke6, pawn e5. Black: Ke8. \textbf{White to move.} Four legal moves: Kd6,
+Kf6, Kd5, Kf5 (the pawn cannot advance --- its own king is in front of it, and d7, e7, f7 are
+all controlled by the black king).
+
+We chose this position for one reason: with four legal moves the whole tree fits on a page.
+But it is not a toy --- it contains a real trap, and here is the independent ground truth,
+from Stockfish 16.1 at depth 30 (\emph{not} from Leela, and not from the author):
+
+\begin{center}
+\begin{tabular}{@{}llp{7.3cm}@{}}
+\toprule
+Move & Stockfish depth 30 & \\
+\midrule
+\textbf{Kd6} & \textbf{mate in 12} & wins \\
+\textbf{Kf6} & \textbf{mate in 18} & also wins, less efficiently \\
+Kd5 & $0.00$ & \textbf{throws the win away} \\
+Kf5 & $0.00$ & \textbf{throws the win away} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+So two of the four moves win and two draw. Keep that in your pocket; the search does not know
+it yet.
+
+\section{The bookkeeping}
+
+Every iteration we recompute, for each of the four moves,
+\[
+  S(a) \;=\; \underbrace{Q(a)}_{\text{measured, or FPU if unmeasured}}
+  \;+\;\underbrace{c_{\text{puct}}\,P(a)\frac{\sqrt{N}}{1+n_a}}_{U(a)}
+\]
+and select the largest. The constants, from Chapter~\ref{ch:puct}:
+\[
+  c_{\text{puct}}(N) = 1.745 + 3.894\ln\!\frac{N + 38740}{38739},\qquad
+  Q_{\text{FPU}} = Q(\text{root}) - 0.33\sqrt{\textstyle\sum_{\text{visited}} P},
+\]
+and $N$ means the total visits already spent on the root's children (using $\sqrt{\max(N,1)}$
+so that the first selection is decided by the priors alone).
+
+The network's opening statement about this position --- one forward pass, no search:
+
+\begin{realdata}[title={Real engine output: the root evaluation and priors}]
+\[
+  V(\text{root}) = +0.97602, \qquad d = 0.024
+\]
+\begin{center}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+Move & $P(a\given s)$ & \\
+\midrule
+Kd6 & 45.13\% & \\
+Kf6 & 44.23\% & \\
+Kf5 &  5.38\% & one of the two moves that draws \\
+Kd5 &  5.26\% & the other \\
+\bottomrule
+\end{tabular}
+\end{center}
+Note what the policy has and has not done. It has correctly identified that the two
+king-forward moves are the serious ones --- $89\%$ of its attention goes there. But it still
+assigns $10.6\%$ to two moves that throw away a won game. \textbf{The policy is a good guess,
+not an oracle}; the search's job in this position is to spend a little of its budget
+converting that $10.6\%$ of doubt into knowledge.
+\end{realdata}
+
+\section{The eight iterations}
+
+Do these with a calculator. Each table is the state \emph{before} the selection.
+
+\subsection*{Iteration 1 --- nothing measured}
+
+$N = 0$ (so $\sqrt{\max(N,1)} = 1$), no move has been visited, so all four get
+$Q_{\text{FPU}} = Q(\text{root}) = 0.97602$ (nothing visited, so the penalty
+$0.33\sqrt{0} = 0$).
+
+\[
+  U(\text{Kd6}) = 1.7451 \times 0.4513 \times \frac{1}{1+0} = 0.78756 .
+\]
+
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Move & $n_a$ & $Q$ & $U$ & $S$ \\
+\midrule
+\textbf{Kd6} & 0 & $0.97602$ & $0.78756$ & $\mathbf{1.76358}$ \\
+Kf6 & 0 & $0.97602$ & $0.77186$ & $1.74788$ \\
+Kf5 & 0 & $0.97602$ & $0.09389$ & $1.06991$ \\
+Kd5 & 0 & $0.97602$ & $0.09179$ & $1.06781$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+With every $Q$ identical, the ranking is purely the priors --- exactly as
+Chapter~\ref{ch:puct} predicted. \textbf{Select Kd6.} Expand it, ask the network:
+the child (Black to move) evaluates to $-0.96766$ from Black's point of view, so the root
+edge Kd6 receives $+0.96766$.
+
+\subsection*{Iteration 2 --- the first measurement, and the FPU penalty appears}
+
+Now one move is measured and three are not. The root's own $Q$ has been updated to
+$(0.97602 + 0.96766)/2 = 0.97184$, and the visited prior mass is $0.4513$, so
+\[
+Q_{\text{FPU}} = 0.97184 - 0.33\sqrt{0.4513} = 0.97184 - 0.22169 = 0.75015 .
+\]
+
+\begin{center}
+\begin{tabular}{@{}lrrrrl@{}}
+\toprule
+Move & $n_a$ & $Q$ & $U$ & $S$ & \\
+\midrule
+\textbf{Kf6} & 0 & $0.75015$ & $0.77190$ & $\mathbf{1.52205}$ & FPU \\
+Kd6 & 1 & $0.96766$ & $0.39380$ & $1.36146$ & measured \\
+Kf5 & 0 & $0.75015$ & $0.09389$ & $0.84404$ & FPU \\
+Kd5 & 0 & $0.75015$ & $0.09180$ & $0.84195$ & FPU \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{keyidea}
+Kd6 has the \emph{best} measured value ($0.96766$ against a mere FPU guess of $0.75015$) and
+is \emph{not} selected. Its $U$ halved the moment it was visited --- the denominator went
+from $1+0$ to $1+1$. This is the anti-greedy mechanism of Chapter~\ref{ch:manymachines}
+doing its work: measuring something makes it less urgent to measure again.
+\end{keyidea}
+
+\textbf{Select Kf6.} Expand: value $+0.98598$ to the root edge.
+
+\subsection*{Iteration 3 --- the first genuine contest}
+
+Two measured moves, both excellent. $Q(\text{root}) = 0.97655$; visited prior mass
+$0.4513+0.4423 = 0.8936$, so $Q_{\text{FPU}} = 0.97655 - 0.33(0.94530) = 0.66460$.
+
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Move & $n_a$ & $Q$ & $U$ & $S$ \\
+\midrule
+\textbf{Kf6} & 1 & $0.98598$ & $0.54585$ & $\mathbf{1.53183}$ \\
+Kd6 & 1 & $0.96766$ & $0.55696$ & $1.52462$ \\
+Kf5 & 0 & $0.66460$ & $0.13279$ & $0.79739$ \\
+Kd5 & 0 & $0.66460$ & $0.12983$ & $0.79443$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The two leaders are separated by $0.007$; the two draws have fallen a full $0.7$ behind,
+because their FPU value dropped when the good moves got measured and came back healthy.
+\textbf{Select Kf6}, and here something new happens: Kf6 already has a child node, so
+selection does not stop at the root. It recurses. At the Kf6 node (Black to move, three legal
+replies with priors Kf8 $52.05\%$, Kd7 $25.89\%$, Kd8 $22.05\%$), the same rule picks
+\textbf{Kf8}, which is expanded and evaluated. The value returned to the root edge Kf6 is
+$+0.95129$.
+
+\begin{worked}{following the sign flips on iteration 3}
+The new leaf is the position after 1.Kf6 Kf8, \emph{White} to move. Its network value is
+$+0.95129$ from White's point of view. Walking up:
+\begin{itemize}
+\item edge (Kf6-node, Kf8), where \emph{Black} is to move: receives $-0.95129$ --- Black does
+  not like it;
+\item edge (root, Kf6), where \emph{White} is to move: receives $+0.95129$.
+\end{itemize}
+Kf6's running average becomes $(0.98598 + 0.95129)/2 = 0.968635$.
+\end{worked}
+
+\subsection*{Iterations 4--8 --- the pattern}
+
+The remaining iterations are the same arithmetic; here is the whole run in one table.
+"Line" is the path the selection walked before expanding a new node, and "backs up" is the
+value that returned to the root edge.
+
+\begin{center}\small
+\begin{tabular}{@{}rlrrrrl@{}}
+\toprule
+It. & Selected & \multicolumn{2}{c}{$S$ of the two leaders} & Line walked & backs up & root edge after \\
+\cmidrule(lr){3-4}
+ &  & Kd6 & Kf6 & & & \\
+\midrule
+1 & Kd6 & $1.76358$ & $1.74788$ & Kd6            & $+0.96766$ & Kd6: $n{=}1$, $Q{=}0.96766$ \\
+2 & Kf6 & $1.36146$ & $1.52205$ & Kf6            & $+0.98598$ & Kf6: $n{=}1$, $Q{=}0.98598$ \\
+3 & Kf6 & $1.52462$ & $1.53183$ & Kf6 Kf8        & $+0.95129$ & Kf6: $n{=}2$, $Q{=}0.96863$ \\
+4 & Kd6 & $1.64983$ & $1.41434$ & Kd6 Kd8        & $+0.99759$ & Kd6: $n{=}2$, $Q{=}0.98262$ \\
+5 & Kd6 & $1.50779$ & $1.48333$ & Kd6 Kf7        & $+0.99992$ & Kd6: $n{=}3$, $Q{=}0.98839$ \\
+6 & Kf6 & $1.42878$ & $1.54411$ & Kf6 Kf8 e6     & $+0.97860$ & Kf6: $n{=}3$, $Q{=}0.97196$ \\
+7 & Kd6 & $1.47084$ & $1.44478$ & Kd6 Kd8 e6     & $+0.97060$ & Kd6: $n{=}4$, $Q{=}0.98394$ \\
+8 & Kf6 & $1.40085$ & $1.48270$ & \ldots         & & \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{realdata}[title={The check: hand arithmetic against the engine}]
+After seven backed-up values, our pencil-and-paper tree says:
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+ & \multicolumn{2}{c}{by hand} & \multicolumn{2}{c}{\texttt{lc0.exe}, \texttt{go nodes 8}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Move & $n_a$ & $Q$ & $n_a$ & $Q$ \\
+\midrule
+Kd6 & 4 & $0.98394$ & 4 & $0.98394$ \\
+Kf6 & 3 & $0.97196$ & 3 & $0.97196$ \\
+Kf5 & 0 & $0.66651$ & 0 & $0.66652$ \\
+Kd5 & 0 & $0.66651$ & 0 & $0.66652$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Every visit count identical; every average identical to five decimal places (the last digit
+of the FPU values differs because the priors above are printed to four figures, not because
+anything conceptual is missing). \textbf{You have just run Leela's search by hand.}
+\end{realdata}
+
+\section{Two things you should notice}
+
+\subsection{The search deepened without being told to}
+
+Nobody wrote "now go deeper". Look at the "line walked" column: iterations 1--2 stop at the
+root's children, 3--5 reach two plies, 6--7 reach three. Depth is an \emph{emergent}
+property of $U$ collapsing where visits pile up. A node visited $n$ times has its $U$ divided
+by $1+n$, so attention flows down the tree the way water flows downhill --- always into the
+part of the tree that has been examined least relative to its promise.
+
+Contrast this with alpha--beta, which searches to a fixed depth and then extends
+selectively by hand-written rules. Leela has no depth parameter at all. The principal
+variation is simply the path you get by always taking the most-visited child.
+
+\subsection{The two bad moves have not been touched}
+
+After eight iterations, Kd5 and Kf5 have $n = 0$. Their FPU value has drifted down from
+$0.976$ to $0.667$ while the good moves proved themselves; their $U$ has crept up from
+$0.092$ to $0.249$ as the root accumulated visits. They are being ignored, but not
+forgotten --- exactly the balance Chapter~\ref{ch:puct} was built to achieve.
+
+So when does the search get to them? Run the engine at higher budgets and watch:
+
+\begin{realdata}[title={Real engine output: the refutation, and its permanence}]
+\begin{center}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+ & \multicolumn{2}{c}{$n$ at 64 nodes} & \multicolumn{2}{c}{$n$ at 128 nodes} & \multicolumn{2}{c}{$n$ at 800 nodes} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Move & $n$ & $Q$ & $n$ & $Q$ & $n$ & $Q$ \\
+\midrule
+Kd6 & 31 & $0.993$ & 62 & $0.979$ & 377 & $0.956$ \\
+Kf6 & 24 & $0.953$ & 58 & $0.963$ & 240 & $0.927$ \\
+Kf5 & 0 & --- & \textbf{1} & $\mathbf{0.000}$ & \textbf{1} & $\mathbf{0.000}$ \\
+Kd5 & 0 & --- & \textbf{1} & $\mathbf{0.000}$ & \textbf{1} & $\mathbf{0.000}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+Somewhere between 64 and 128 nodes, each of the two drawing moves received \textbf{exactly
+one visit}, returned $Q = 0.000$ --- and was never visited again, not in the next 672 nodes.
+\end{realdata}
+
+That single visit is the whole story of this chapter in miniature:
+
+\begin{keyidea}
+The network's \emph{policy} did not know these moves were bad: it gave them $10.6\%$ of its
+attention. The network's \emph{value head} knew immediately: one look returned $0.000$ with a
+draw probability of $1.000$. And the \emph{search} is the machinery that converts the second
+into a correction of the first, at a cost of two visits out of 800. Policy proposes; value
+disposes; search is the negotiation.
+\end{keyidea}
+
+And Stockfish, asked independently, agrees that $0.000$ is right: Kd5 and Kf5 draw. Two visits
+out of eight hundred were enough to permanently eliminate half the legal moves in the
+position, correctly.
+
+\begin{pitfall}
+Notice how easily this could have gone wrong, and what it depends on. It worked because the
+\emph{value} head recognised the drawn structure in a single forward pass. In a position
+where the refutation is five moves deep rather than immediate, that first visit would have
+returned an encouraging number, and the search would have needed to build a subtree to find
+the truth. The engine's blind spots are precisely the positions where \emph{both} heads are
+wrong at once --- and that is not a rare corner case, it is the definition of a difficult
+position. Chapter~\ref{ch:readingtree} shows how to spot it happening in your own output.
+\end{pitfall}
+
+\section{Which number chooses the move?}
+
+At 800 nodes the search has Kd6 with $n=377$, $Q = 0.956$ and Kf6 with $n = 240$,
+$Q = 0.927$. The engine plays \texttt{bestmove e6d6} --- Kd6. Here both criteria agree, so the
+position does not settle the question. Which one is it, in general?
+
+The standard answer is \textbf{the most-visited move, not the highest $Q$}, and the reason is
+worth understanding because it is counter-intuitive.
+
+\begin{keyidea}
+$Q$ is an average over a subtree, and a subtree can be small. A move visited three times with
+$Q = 0.99$ has an average over three samples; a move visited 500 times with $Q = 0.95$ has
+survived five hundred attempts to refute it. High $Q$ on low $n$ usually means \emph{the
+search has not yet found the objection} --- indeed, if the search believed that $Q$, it would
+have kept visiting the move, and $n$ would not be small. \textbf{Visit count is the search's
+considered opinion; $Q$ is a measurement that may be young.}
+\end{keyidea}
+
+The exception is certainty. In Chapter~\ref{ch:puct}'s Morphy position the engine played a
+move with $n = 3$ over a move with $n = 172$, because the $Q$ of $1.0$ was not an average at
+all --- it was a proof (16.Qb8+ Nxb8 17.Rd8\#). Engines track proven wins and losses
+separately from sampled values, and a proof outranks any amount of sampling. That is the only
+regular circumstance in which a low-visit move is played.
+
+\begin{repobox}[title={in this repository}]
+This is the rule your tooling must follow when reporting "what the engine thought": rank
+candidate moves by visits, report $Q$ alongside as the evaluation, and treat any move whose
+$Q$ is excellent but whose $n$ is small as \emph{a question}, not an answer. It is also the
+right basis for the "how seriously did LC0 weigh this plan" language in your design
+documents --- that phrase means visits.
+\end{repobox}
+
+\section{An experiment: the position is not the whole input}
+
+One last thing, discovered while checking this chapter's numbers, which matters for any tool
+that feeds FENs to a network.
+
+Evaluating the position after 1.Kf6 Kf8 gives different answers depending on how you ask:
+
+\begin{realdata}[title={Real experiment: same board, two histories}]
+\begin{center}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+How the position was given to the engine & $V$ & $d$ \\
+\midrule
+\texttt{position fen 5k2/8/5K2/4P3/8/8/8/8 w - - 2 2} & $+0.98838$ & $0.012$ \\
+\texttt{position fen 4k3/\ldots\ w - - 0 1 moves e6f6 e8f8} & $+0.95129$ & $0.049$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+The same 32 squares, the same side to move, the same castling and en-passant rights ---
+and the evaluation differs by $0.037$, with four times the draw probability. The second
+number is the one the search used (it matches the backed-up value in iteration 3 exactly).
+\end{realdata}
+
+The cause is that Leela's input is not a position, it is a \textbf{position with history}:
+the network sees the last several board states as additional input planes. Given a bare FEN,
+the engine has to fabricate a history by repeating the current position, and a repeated
+position is evidence of shuffling --- hence the higher draw probability. We measured the same
+effect at one ply back in the previous chapter's data ($0.96823$ versus $0.96766$).
+
+\begin{pitfall}
+\textbf{This has a direct consequence for your project.} Anywhere the backend evaluates a
+position by handing the engine a bare FEN --- diagnosis of a game position, a drill, a cached
+critical point --- it is asking a slightly different question from the one the engine answers
+during a game. The effect is small in quiet positions and largest where repetition matters:
+fortresses, perpetuals, drawn endgames. The fix is cheap: pass the move history
+(\texttt{position startpos moves \ldots}) rather than a FEN wherever the history is available.
+Worth an audit.
+\end{pitfall}
+
+\begin{exercises}
+
+\exhead[warm-up]{ch7:warmup} Reproduce iteration 1's $U$ values for all four moves. Use
+$c_{\text{puct}} = 1.7451$ and check all four against the table.
+
+\exhead[the FPU drop]{ch7:fpudrop} Compute $Q_{\text{FPU}}$ at iteration 4, given
+$Q(\text{root}) = 0.97024$ and visited prior mass $0.8936$. Why did the visited mass not
+change between iterations 3 and 4, even though a visit occurred?
+
+\exhead[iteration 9]{ch7:iter9} Continue the simulation. Iteration 8 selects Kf6 (see the
+final row). Suppose it walks the line Kf6 Kf8 e6 Kg8 and backs up $+0.982$. Recompute
+$Q(\text{root})$, $Q_{\text{FPU}}$, all four $U$'s, all four $S$'s, and say which move
+iteration 9 selects. (Take $c_{\text{puct}} = 1.7459$.)
+
+\exhead[when do the bad moves get looked at?]{ch7:whenbad} At iteration 8 the drawing moves
+have $S = 0.915$ against the leader's $1.483$. Using $U = c\,P\sqrt{N}/(1+0)$ with
+$P = 0.0538$, and assuming the leaders' $S$ settles near $1.0$ as $U$ decays, estimate the
+value of $N$ at which Kf5's $S$ overtakes. Compare with the engine's actual answer (somewhere
+between 64 and 128 nodes) and comment on your estimate.
+
+\exhead[the single visit]{ch7:singlevisit} Kf5 was visited once, returned $0.000$, and was
+never visited again. Using the PUCT formula, show why: compute $U(\text{Kf5})$ at $N = 800$
+with $n = 1$, add $Q = 0$, and compare with the leader's $S$. How large would $N$ have to
+become before Kf5 is visited a second time?
+
+\exhead[sign flips]{ch7:signs2} Iteration 6 walked Kf6 Kf8 e6 and the new leaf (Black to
+move) evaluated at $-0.97860$. Write out the value added at each of the three edges on the
+path, with signs and with whose point of view each represents.
+
+\exhead[policy versus value]{ch7:polvalue} The policy gave the two losing moves $10.6\%$;
+the value head scored them $0.000$ on sight. In three sentences, explain why a network can be
+wrong in one head and right in the other about the same move. (You will be able to give a
+much better answer after Chapter~\ref{ch:heads}; write this one now and compare.)
+
+\exhead[most visits or best Q?]{ch7:visitsvsq} A search reports move A with $n = 410$,
+$Q = 0.61$ and move B with $n = 12$, $Q = 0.88$. Which does the engine play, and why? Now
+suppose B's $Q$ is exactly $1.000$ and its subtree ends in mate. What changes, and why is
+that not an inconsistency?
+
+\exhead[the history effect]{ch7:history} Design an experiment using your own corpus to
+measure how large the FEN-versus-history discrepancy is in practice: which positions would
+you sample, what would you compare, and what summary statistic would tell you whether it
+matters for the diagnosis pipeline? Predict the shape of the answer before you run it.
+
+\exhead[a search that would fail]{ch7:wouldfail} Invent a (schematic, non-chess) situation in
+which this search finds the wrong move even with 10{,}000 nodes: specify priors, and the
+values returned by the first visit to each move, such that the true best move is never
+adequately examined. What single quantity in the PUCT formula would have to change to rescue
+it?
+
+\exhead[report writing]{ch7:report} Write the three-sentence explanation your training tool
+should show a user about this position, using only quantities computed in this chapter. It
+must not contain a chess claim that did not come from the engine.
+
+\end{exercises}

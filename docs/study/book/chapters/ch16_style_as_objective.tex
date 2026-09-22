@@ -1,0 +1,328 @@
+\chapter{Style as an objective function}
+\label{ch:style}
+
+\begin{objectives}
+\begin{itemize}
+\item Build entropy from scratch and read it as "how many moves the opponent effectively has".
+\item Compute policy entropy and perplexity on real positions.
+\item Discover, from real data, why maximising opponent confusion is \emph{not} the same as
+  creating danger --- and repair the objective.
+\item Compare four ways to steer an engine, and rank them by how much they corrupt the
+  evaluation.
+\item State the constrained-selection pattern that gets style without giving up soundness.
+\end{itemize}
+\end{objectives}
+
+\section{What "style" is, mathematically}
+
+An engine plays the move that maximises something. Change what it maximises and you change
+how it plays. That is the whole of engine steering, and stating it that plainly is useful,
+because it forces the real question: \emph{what exactly do you want maximised?}
+
+"Sharp, dynamic, sacrificial, Tal-like" is a feeling. To steer an engine you need a number.
+This chapter builds candidate numbers, tests them against real output, and finds that the
+obvious one is wrong in an instructive way.
+
+\section{Entropy, from scratch}
+
+\subsection{Surprise}
+
+How surprised should you be by an event of probability $p$? Three requirements: a certain
+event ($p=1$) is no surprise; rarer is more surprising; and the surprise of two independent
+events together should be the \emph{sum} of their surprises. Exactly one function does all
+three:
+\begin{equation}
+  \label{eq:surprise}
+  \text{surprise}(p) \;=\; -\ln p .
+\end{equation}
+Check: $-\ln 1 = 0$ \checkmark; smaller $p$ gives bigger value \checkmark; and
+$-\ln(p_1p_2) = -\ln p_1 - \ln p_2$ \checkmark.
+
+\subsection{Entropy is average surprise}
+
+Given a distribution $P$ over moves, its \textbf{entropy} is the surprise you should expect:
+\begin{equation}
+  \label{eq:entropy}
+  \Ent(P) \;=\; \sum_a P(a)\cdot\bigl(-\ln P(a)\bigr) \;=\; -\sum_a P(a)\ln P(a).
+\end{equation}
+
+\begin{worked}{entropy of two policies}
+\emph{(Illustrative.)} Position A: one move overwhelmingly indicated,
+$P = (0.95, 0.03, 0.02)$:
+\[
+\Ent = -(0.95\ln0.95 + 0.03\ln0.03 + 0.02\ln0.02)
+     = -(-0.0487 - 0.1052 - 0.0782) = 0.232 .
+\]
+Position B: three equally plausible moves, $P = (0.34, 0.33, 0.33)$:
+\[
+\Ent = -(0.34\ln0.34 + 0.33\ln0.33 + 0.33\ln0.33) = 1.098 \;\approx\; \ln 3 .
+\]
+Nearly five times the entropy of A.
+\end{worked}
+
+\subsection{Perplexity: entropy in units you can feel}
+
+Entropy in nats is hard to have intuitions about. Exponentiate it:
+\begin{equation}
+  \label{eq:perplexity}
+  \text{perplexity}(P) \;=\; e^{\Ent(P)}
+\end{equation}
+and you get \textbf{the effective number of options}. A distribution spread evenly over $k$
+moves has perplexity exactly $k$; one concentrated on a single move has perplexity 1. Position
+A above has perplexity $1.26$ ("basically one move"); position B has $3.00$ ("genuinely three").
+
+\begin{realdata}[title={Real engine output: policy perplexity of this book's positions}]
+\begin{center}
+\begin{tabular}{@{}lrrrl@{}}
+\toprule
+Position & legal & $\Ent(P)$ & perplexity & reading \\
+\midrule
+K+P, Black to move & 2 & $0.689$ & $1.99$ & both moves live \\
+K+P, White to move & 4 & $1.032$ & $2.81$ & effectively three \\
+Drawn opposition ending & 5 & $1.609$ & $\mathbf{5.00}$ & \textbf{all five equally plausible} \\
+Initial position & 20 & $2.420$ & $11.25$ & eleven real options \\
+Morphy, before O-O-O & 49 & $2.506$ & $12.26$ & \\
+Morphy, before Qb8+ & 46 & $2.618$ & $13.71$ & \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{realdata}
+
+\section{The obvious objective, and why it is wrong}
+
+Tal's chess is usually described as making the opponent's task hard: many plausible moves,
+most of them losing. The natural formalisation --- and the one in this project's earlier
+theory notes --- is to prefer moves that maximise the \emph{opponent's} policy entropy:
+\begin{equation}
+  \label{eq:talnaive}
+  \text{Score}_{\text{Tal}}(s') \;=\; V(s') \;+\; \gamma\,\Ent\bigl(P(\cdot\given s')\bigr) .
+\end{equation}
+Evaluate each candidate move, look at the position it produces, and reward those in which the
+opponent's policy is flat.
+
+Now look at the third row of the table above.
+
+\begin{pitfall}
+\textbf{The drawn king-and-pawn ending has the maximum possible policy entropy.} Perplexity
+$5.00$ out of 5 legal moves --- the opponent's policy is perfectly flat, more confused than in
+any other position in our data set, including a position with mate in two on the board.
+
+And the position is a dead draw. Stockfish at depth 30 gives $0.00$ for every move; Leela's
+draw probability is $0.997$. The opponent has five equally plausible moves \emph{because
+nothing matters}. Every move draws, so the policy has no reason to prefer any of them.
+
+Equation~\eqref{eq:talnaive} would steer you here. It scores maximum "Tal" on the most
+sterile position in the book.
+\end{pitfall}
+
+This is worth dwelling on because it is a real defect in a real design note, found by
+computing the metric on real positions rather than reasoning about it. Entropy measures
+\emph{indifference}, and indifference has two utterly different causes:
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & many plausible moves because\ldots & \\
+\midrule
+\textbf{Minefield} & several moves are critical and only one holds & what you want \\
+\textbf{Swamp} & nothing anyone does matters & what you get \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{The repair}
+
+The missing ingredient is \emph{stakes}, and Chapter~\ref{ch:currency} already built it:
+sharpness $= 1 - d$, the probability that the game gets decided. Multiply rather than add,
+so that zero stakes zeroes the whole term:
+\begin{equation}
+  \label{eq:talfixed}
+  \boxed{\;
+  \text{Score}(s') \;=\; V(s') \;+\; \gamma\;\underbrace{\bigl(1 - d(s')\bigr)}_{\text{is anything at stake?}}
+  \cdot\underbrace{\Ent\bigl(P(\cdot\given s')\bigr)}_{\text{how many ways to go wrong?}} \;}
+\end{equation}
+
+Recompute the drawn ending: $1 - d = 0.003$, so the styling term is
+$0.003 \times 1.609 = 0.005$ regardless of $\gamma$. The swamp is correctly ignored. A
+position with $d = 0.15$ and the same entropy scores $0.85 \times 1.609 = 1.37$ --- nearly
+three hundred times more.
+
+\begin{keyidea}
+\textbf{A steering term needs both a "how confusing" factor and a "does it matter" factor,
+multiplied.} Either alone is trivially gameable: entropy alone steers into dead positions;
+stakes alone steers into any decisive position including simple ones. This is the general
+shape of every honest complexity metric.
+\end{keyidea}
+
+\begin{worked}{choosing a steer move from real data}
+The K+P ending, using the opponent's policy after each of White's four moves (measured):
+\begin{center}
+\begin{tabular}{@{}lrrrrl@{}}
+\toprule
+White's move & opp.\ legal & $\Ent(P_{\text{opp}})$ & perplexity & $V$ & Stockfish \\
+\midrule
+Kd6 & 3 & $1.066$ & $2.90$ & $+0.968$ & mate in 11 \\
+Kf6 & 3 & $1.023$ & $2.78$ & $+0.982$ & mate in 19 \\
+Kd5 & 5 & $0.967$ & $2.63$ & $0.000$ & draw \\
+Kf5 & 5 & $0.959$ & $2.61$ & $0.000$ & draw \\
+\bottomrule
+\end{tabular}
+\end{center}
+Apply Equation~\eqref{eq:talfixed} with $\gamma = 0.1$: the two drawing moves are excluded by
+$V$; between the two winning moves, Kd6 leaves Black with $2.90$ effective options against
+Kf6's $2.78$, so Kd6 is both objectively better \emph{and} the one that gives the defender
+more chances to go wrong. Here style and truth agree, which is the easy case.
+
+The interesting case is when they do not, and that is exactly what §16.5 is about.
+\end{worked}
+
+\section{Four levers, ranked by how much damage they do}
+
+\subsection{Lever 1: bias the search's $Q$}
+
+\[
+  Q_{\text{biased}}(s,a) \;=\; Q(s,a) \;+\; \lambda\,M(\text{motif along the line}) .
+\]
+Add a motif bonus inside the search. This is the most direct and the most dangerous: the
+biased value propagates up the tree, so the engine's \emph{evaluation} is now a blend of
+"winning" and "stylish", and you can no longer tell which. Worse, it invites the horizon
+effect --- the engine will play a real material loss to reach a position that scores the
+bonus, because the bonus is inside the quantity being maximised.
+
+\begin{pitfall}
+This lever also destroys the thing that makes your tool trustworthy. Once $Q$ is
+style-adjusted, every displayed evaluation, every "you lost $0.4$ here", and every drill
+threshold is measured in a corrupted currency. \textbf{Never bias the number you also report.}
+\end{pitfall}
+
+\subsection{Lever 2: an auxiliary head with a dial}
+
+Train the network to emit a second value $V_{\text{style}}$ alongside $V_{\text{win}}$, and
+blend at inference:
+\[
+  V_{\text{steered}} = (1-\alpha)V_{\text{win}} + \alpha V_{\text{style}} .
+\]
+Clean in principle and it keeps the two quantities separable --- but it requires training a
+network, which is out of scope here by several orders of magnitude of compute. Worth knowing
+the option exists; not worth planning around.
+
+\subsection{Lever 3: re-rank the candidates after search (the safe one)}
+
+Do not touch the search at all. Let it run honestly, then choose among its candidates by a
+style criterion, subject to a soundness constraint:
+\begin{equation}
+  \label{eq:constrained}
+  \boxed{\;
+  a_{\text{steer}} \;=\; \argmax_{a\,:\,Q(s,a)\;\ge\; Q^{*} - \epsilon}\;\; \text{Style}(s\!\cdot\!a)
+  \;}
+\end{equation}
+where $Q^{*}$ is the best value found and $\epsilon$ is how much objective quality you are
+willing to spend --- a number you choose, state, and can show the user.
+
+\begin{keyidea}
+Equation~\eqref{eq:constrained} is the pattern to build on. It has four properties the others
+lack: the evaluation stays honest; the cost of style is \emph{explicit} ($\epsilon$, in units
+the user understands); it cannot produce an unsound move, because unsound moves fail the
+constraint; and it works with the engine you already have, today, with no training.
+\end{keyidea}
+
+\subsection{Lever 4: restrict the opponent (the anaconda)}
+
+For the opposite style --- squeezing rather than storming --- the natural quantity is the
+opponent's mobility:
+\[
+  R_{\text{mobility}}(s') \;=\; -\lambda\,\bigl|\mathcal{M}_{\text{opp}}(s')\bigr| ,
+\]
+the number of legal moves available to them. Cheap to compute (a move generator call) and it
+plugs into Equation~\eqref{eq:constrained} in place of Style with no other changes.
+
+It has the same failure mode as entropy, in mirror image: restricting a helpless opponent in a
+dead position scores well and means nothing. It needs the same $(1-d)$ factor. In fact:
+
+\begin{keyidea}
+Every style metric in this chapter is of the form
+\[
+  \text{Style}(s') \;=\; \bigl(1 - d(s')\bigr) \times \bigl(\text{something about the
+  opponent's options}\bigr) .
+\]
+The left factor is what makes it about chess; the right factor is what makes it about style.
+Get the left factor wrong and you have built a metric that scores dead positions highly, which
+is precisely the failure this project has hit before in a different guise.
+\end{keyidea}
+
+\section{Notes on evaluating a steer}
+
+Three cheap disciplines, before this becomes a feature:
+
+\begin{enumerate}
+\item \textbf{Compute it on the swamp.} Run any candidate metric on the drawn opposition
+  ending. If it scores well there, the metric is broken. Keep a small set of such
+  \emph{negative witnesses} and run every metric against them --- this chapter found a real
+  defect with a single position.
+\item \textbf{Report $\epsilon$ in the interface.} "This move gives up $0.08$ of evaluation to
+  reach a much sharper position" is honest, checkable and teaches the user something. "Steer
+  move" alone is not.
+\item \textbf{Measure whether the opponent actually goes wrong.} The whole justification is
+  practical: that a human at the other end errs more often. That is testable against your own
+  corpus --- do positions with high $\text{Style}$ actually precede more errors? If not, the
+  metric is measuring something real but useless.
+\end{enumerate}
+
+\begin{repobox}[title={in this repository}]
+The existing TS2 steer score already has components along these lines (decisiveness,
+narrowness, policy trap, attention). The two contributions of this chapter are: the
+multiplicative $(1-d)$ gate, which the entropy component needs and which the drawn-ending
+witness shows is not optional; and the constrained form of Equation~\eqref{eq:constrained},
+which makes the price of steering explicit rather than baked into a weighted sum.
+\end{repobox}
+
+\begin{exercises}
+
+\exhead[surprise]{ch16:surprise} Compute $-\ln p$ for $p = 0.9, 0.5, 0.1, 0.01$. Why must
+surprise be additive for independent events, and which other candidate function does that rule
+out?
+
+\exhead[entropy by hand]{ch16:entropy} Compute $\Ent$ and perplexity for $P = (0.7,0.2,0.1)$
+and for $P = (0.4,0.35,0.25)$. Which position offers the opponent more real choice, and by how
+many "effective moves"?
+
+\exhead[maximum entropy]{ch16:maxent} Prove (or argue convincingly) that entropy over $k$
+options is maximised by the uniform distribution, with value $\ln k$. Verify against the
+drawn ending's measured $1.609$ and $\ln 5$.
+
+\exhead[the swamp]{ch16:swamp} In your own words, explain why the drawn ending has maximum
+policy entropy. Then explain why this is a fact about the \emph{policy head's training
+objective} rather than a quirk.
+
+\exhead[repairing the objective]{ch16:repair} Compute the style term of
+Equation~\eqref{eq:talfixed} for all six positions in the §16.2.3 table, using their real $d$
+values from Chapter~\ref{ch:currency}. Rank them. Does the ranking match your chess intuition
+about which is the most dangerous position to defend?
+
+\exhead[additive versus multiplicative]{ch16:multiplicative} Why does
+Equation~\eqref{eq:talfixed} multiply the two factors instead of adding them? Construct a
+position pair where the additive version gives the wrong ranking.
+
+\exhead[horizon effect]{ch16:horizon} Describe concretely how lever 1 could make an engine
+sacrifice a rook for nothing. Which term in $Q_{\text{biased}}$ is responsible, and why does
+increasing search depth not fix it?
+
+\exhead[choosing epsilon]{ch16:epsilon} You must choose $\epsilon$ in
+Equation~\eqref{eq:constrained}. Argue for a specific value for (a) a training tool for a
+2100-rated player, (b) an engine playing a rated game. What information would let you choose
+better than by taste?
+
+\exhead[mobility]{ch16:mobility} Compute the opponent's mobility for each of the four moves in
+the K+P ending from the data in §16.3.1 (the "opp.\ legal" column). Which move minimises it?
+Is that the move you want, and what does the answer say about mobility as a standalone
+metric?
+
+\exhead[a negative witness set]{ch16:witness} Propose five positions --- described in words ---
+that any style metric must score \emph{low}. For each, say which naive metric it would catch
+out.
+
+\exhead[the real test]{ch16:realtest} Design the experiment that would tell you whether your
+steer metric predicts human error, using your 9{,}030-game corpus. What would you compute,
+what would the null result look like, and what confound would you have to control for?
+
+\end{exercises}

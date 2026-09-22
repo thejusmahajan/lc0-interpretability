@@ -1,0 +1,51 @@
+\chapter{Inside the Network}
+\label{ch:network}
+
+This chapter details internal network processing, clearly separating established architecture and measured outputs from unverified hypotheses.
+
+\section{The Conveyor Belt}
+
+\begin{established}[Illustrative Role Overlay]
+\begin{center}
+\input{figures/fig_5_1.tex}
+\captionof{figure}{\textbf{FIG-5.1: Conveyor belt architecture.} 64 square tokens pass through 15 transformer encoder layers (24 heads each) to policy prior $P(a \mid s)$ and WDL value heads (Equations~\eqref{eq:E1}--\eqref{eq:E2}). Layer role progression (pieces $\rightarrow$ geometry $\rightarrow$ lookahead $\rightarrow$ strategy) is an unmeasured illustrative cartoon.}
+\label{fig:5_1}
+\end{center}
+\end{established}
+
+\clearpage
+\section{The Linear Probe Hypothesis}
+
+\begin{hypothesis}[Linear Probe Model]
+\begin{center}
+\begin{minipage}{\linewidth}
+\captionsetup{type=figure}
+\centering
+\subcaptionbox{Forward Pass Probe Tap}{\input{figures/fig_5_2a.tex}}\qquad
+\subcaptionbox{Suppressed Sacrifice Hypothesis}{\input{figures/fig_5_2b.tex}}
+\captionof{figure}{\textbf{FIG-5.2: Probe hypothesis.} Conceptual model of middle-layer tactical awareness suppressed by final policy output. No fabricated internal probe values are used.}
+\label{fig:5_2}
+\end{minipage}
+\end{center}
+\end{hypothesis}
+
+\section{Measured Counterpart: Policy Suppression}
+
+\begin{realdata}[Policy Suppression of Forced Mate]
+\begin{center}
+\input{figures/fig_5_3.tex}
+\captionof{figure}{\textbf{FIG-5.3: Measured instinct override.} In the Morphy position, $P(\text{Qb8+}) = 1.60\%$. The instinct nearly missed a forced mate in 2, providing a measured counterpart to policy suppression without probe assumptions.}
+\label{fig:5_3}
+\end{center}
+\end{realdata}
+
+\section{Attention Map Visualization Tooling}
+
+\begin{hypothesis}[Tooling Limitation \& Target Concept]
+\begin{center}
+\input{figures/fig_5_4.tex}
+\captionof{figure}{\textbf{FIG-5.4: Attention maps.} Current visualizations average attention across all 15 layers and 24 heads (diffuse map). Single-head isolation remains a target concept.}
+\label{fig:5_4}
+\end{center}
+\end{hypothesis}
+

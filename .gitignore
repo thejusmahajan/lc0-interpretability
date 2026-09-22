@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Logs & Environment variables
+*.log
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Engine binaries & heavy neural nets
+engine/
+*.pb.gz
+*.onnx
+*.exe
+*.dll
+
+# IDEs
+.idea/
+.vscode/

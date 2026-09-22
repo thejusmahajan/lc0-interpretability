@@ -1,0 +1,285 @@
+% =============================================================================
+%  mctsviz.sty -- drawing primitives for "Inside LC0's Mind: A Visual Guide"
+%
+%  PURPOSE
+%  -------
+%  Every search-tree picture in the visual guide is drawn with the macros in
+%  this file and NOTHING ELSE.  The point is that the visual grammar (what a
+%  colour means, what a dashed border means, how thick an edge is) is defined
+%  once, here, so that a reader who learns to read frame 1 can read all 40
+%  frames without relearning anything.
+%
+%  DO NOT write raw \node / \draw for tree figures.  If a picture needs
+%  something these macros cannot express, add a macro here (and document it)
+%  rather than hand-rolling it in the figure.
+%
+%  Tested on: TeX Live 2019 (pdflatex).  Requires: tikz, xcolor, xskak.
+% =============================================================================
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{mctsviz}[2026/08/07 v1.0 MCTS search-tree visual grammar]
+
+\RequirePackage{tikz}
+\RequirePackage{xcolor}
+\RequirePackage{ifthen}
+\usetikzlibrary{positioning,calc,arrows.meta,shapes.geometric,fit,backgrounds,
+                decorations.pathreplacing,shadows.blur}
+
+% -----------------------------------------------------------------------------
+% 1. Palette.  \providecolor: if the book preamble already defined these, its
+%    definitions win, so the guide and the book stay colour-identical.
+% -----------------------------------------------------------------------------
+\providecolor{NavyBlue}{HTML}{1F3B73}   % structure, borders, root
+\providecolor{BuildBlue}{HTML}{2C5AA0}  % VISITS  (heat of a node)
+\providecolor{IdeaGreen}{HTML}{2E6E4E}  % NEW this frame / backed-up value
+\providecolor{PitfallRed}{HTML}{9B2C2C} % REFUTED / drawn-away / trap
+\providecolor{WorkGrey}{HTML}{4A4A4A}   % unmeasured, ghosts, scaffolding
+\providecolor{DataTeal}{HTML}{1C6E72}   % measured real engine output
+\providecolor{HypPurple}{HTML}{5B3A87}  % hypothesis, not measured
+\providecolor{PaleGrey}{HTML}{F4F4F6}
+\providecolor{GoldPath}{HTML}{B8860B}   % the path walked THIS iteration
+\providecolor{BridgeOrange}{HTML}{D97706} % Physics bridge color
+
+% -----------------------------------------------------------------------------
+% 2. Tunable geometry.  Change here, every figure follows.
+% -----------------------------------------------------------------------------
+\newcommand{\vgNodeW}{20mm}   % node width  -- fixed so columns never shift
+\newcommand{\vgNodeH}{9mm}    % node height
+\newcommand{\vgBarUnit}{16mm} % vertical mm per 1.00 of score in an S-bar
+\newcommand{\vgBarW}{5mm}     % S-bar width
+\newcommand{\vgMaxEdge}{3.2}  % pt: edge width at max visits
+
+% -----------------------------------------------------------------------------
+% 3. NODE STYLES  -- the visual grammar.  Learn these once.
+%
+%    border  solid navy      = expanded: the network has evaluated this node
+%    border  dashed grey     = never visited: its Q is a GUESS (FPU), not a
+%                              measurement.  This distinction is the single
+%                              most important one in the whole document.
+%    border  thick green     = created on THIS iteration
+%    border  red + red fill  = visited and refuted (Q collapsed)
+%    fill    blue saturation = visit count (see \vgheat)
+%    ghost                   = where things stood BEFORE this iteration
+% -----------------------------------------------------------------------------
+\tikzset{
+  vgnode/.style={
+    rounded corners=2pt, draw=NavyBlue, line width=0.7pt,
+    fill=white, inner sep=2.5pt,
+    minimum width=\vgNodeW, minimum height=\vgNodeH,
+    align=center, font=\scriptsize, text=black},
+  vgroot/.style={vgnode, line width=1.1pt, fill=PaleGrey,
+    minimum width=26mm, minimum height=11mm},
+  vgunvisited/.style={vgnode, draw=WorkGrey!55,
+    dash pattern=on 2pt off 1.6pt, fill=white, text=WorkGrey},
+  vgnew/.style={vgnode, draw=IdeaGreen, line width=1.3pt, fill=IdeaGreen!8},
+  vgrefuted/.style={vgnode, draw=PitfallRed, line width=1.0pt, fill=PitfallRed!12},
+  vgghost/.style={vgnode, draw=WorkGrey!28, fill=none, text=WorkGrey!45,
+    dash pattern=on 1pt off 1.5pt, line width=0.4pt},
+  vgboard/.style={draw=NavyBlue!40, line width=0.4pt, inner sep=1.5pt,
+    rounded corners=1pt, fill=white},
+  vglabel/.style={font=\scriptsize\itshape, text=WorkGrey, align=center},
+  vgtag/.style={font=\tiny\bfseries, inner sep=1.5pt, rounded corners=1pt},
+  % --- edges ---
+  vgedge/.style={draw=NavyBlue!70, line width=0.5pt, -{Straight Barb[length=1.6mm]}},
+  vgedgeghost/.style={draw=WorkGrey!30, line width=0.4pt,
+    dash pattern=on 1pt off 1.5pt},
+  vgpath/.style={draw=GoldPath, line width=2.0pt, -{Straight Barb[length=2.4mm]},
+    opacity=0.85},
+  vgbackprop/.style={draw=IdeaGreen, line width=1.0pt,
+    -{Straight Barb[length=2.0mm]}, dash pattern=on 2.5pt off 1.5pt},
+}
+
+% -----------------------------------------------------------------------------
+% 4. \vgheat{<n>}{<nmax>}
+%    Sets colour `vgfill' to the visit-heat colour for n visits out of nmax.
+%    n=0 -> white.  Use as:  \vgheat{4}{4} \node[vgnode, fill=vgfill] ...
+% -----------------------------------------------------------------------------
+\newcommand{\vgheat}[2]{%
+  \pgfmathtruncatemacro{\vgHeatPct}{ifthenelse(#1<=0, 0,
+      min(62, 12 + 50*#1/max(#2,1)))}%
+  \colorlet{vgfill}{BuildBlue!\vgHeatPct}%
+}
+
+% -----------------------------------------------------------------------------
+% 5. \vgedgewidth{<n>}{<nmax>}
+%    Sets \vgEW (a bare number, in pt) for an edge carrying n visits.
+%    An unvisited edge is hairline; the main line is fat.  Visits are the
+%    thing the reader should see from across the room.
+% -----------------------------------------------------------------------------
+\newcommand{\vgedgewidth}[2]{%
+  \pgfmathsetmacro{\vgEW}{0.4 + (\vgMaxEdge-0.4)*#1/max(#2,1)}%
+}
+
+% -----------------------------------------------------------------------------
+% 6. THE S-BAR.  This is the figure that makes PUCT visible.
+%
+%    \vgsbar{<x>}{<Q>}{<U>}{<move label>}{<state>}
+%       <x>     x-coordinate of the bar centre, in cm (bare number)
+%       <Q>     the Q term  (measured average, or the FPU guess)
+%       <U>     the U term  (the exploration bonus)
+%       <label> e.g. Kd6
+%       <state> one of:  sel | meas | fpu | dead
+%
+%    Q is drawn solid from the baseline; U is stacked on top of it, hatched-
+%    light.  Total height = S = Q+U.  THE TALLEST BAR IS THE MOVE THE SEARCH
+%    PICKS.  That single sentence is the whole of PUCT, and the reader sees it
+%    rather than being told it.
+%
+%    Draw the baseline yourself with \vgsbaraxis before the bars.
+% -----------------------------------------------------------------------------
+\newcommand{\vgsbaraxis}[3]{% #1=xmin #2=xmax #3=top gridline value
+  \draw[WorkGrey!45, line width=0.4pt] (#1,0) -- (#2,0);
+  \pgfmathsetmacro{\vgTop}{#3*\vgBarUnit/1cm}%
+  \draw[WorkGrey!22, line width=0.3pt, dash pattern=on 1pt off 1.5pt]
+        (#1,\vgTop) -- (#2,\vgTop);
+  \node[left=1mm, font=\tiny, text=WorkGrey!70] at (#1,\vgTop) {$S{=}#3$};
+}
+\newcommand{\vgsbar}[5]{%
+  \pgfmathsetmacro{\vgQh}{#2*\vgBarUnit/1cm}%
+  \pgfmathsetmacro{\vgUh}{#3*\vgBarUnit/1cm}%
+  \pgfmathsetmacro{\vgSh}{\vgQh+\vgUh}%
+  \pgfmathsetmacro{\vgHW}{\vgBarW/2/1cm}%
+  % --- colour by state ---
+  \def\vgQcol{BuildBlue!70}\def\vgUcol{BuildBlue!22}\def\vgEcol{NavyBlue!55}%
+  \ifthenelse{\equal{#5}{sel}}{\def\vgQcol{GoldPath!85}\def\vgUcol{GoldPath!28}%
+      \def\vgEcol{GoldPath}}{}%
+  \ifthenelse{\equal{#5}{fpu}}{\def\vgQcol{WorkGrey!35}\def\vgUcol{WorkGrey!15}%
+      \def\vgEcol{WorkGrey!55}}{}%
+  \ifthenelse{\equal{#5}{dead}}{\def\vgQcol{PitfallRed!45}\def\vgUcol{PitfallRed!15}%
+      \def\vgEcol{PitfallRed!70}}{}%
+  % --- Q segment (solid = measured ground) ---
+  \fill[\vgQcol] (#1-\vgHW,0) rectangle (#1+\vgHW,\vgQh);
+  % --- U segment (pale = the curiosity bonus, borrowed not earned) ---
+  \fill[\vgUcol] (#1-\vgHW,\vgQh) rectangle (#1+\vgHW,\vgSh);
+  \draw[\vgEcol, line width=0.4pt] (#1-\vgHW,0) rectangle (#1+\vgHW,\vgSh);
+  \draw[\vgEcol, line width=0.4pt] (#1-\vgHW,\vgQh) -- (#1+\vgHW,\vgQh);
+  % --- labels ---
+  \node[font=\tiny, text=WorkGrey!85, below=1pt] at (#1,0) {#4};
+  \node[font=\tiny\bfseries, above=1pt] at (#1,\vgSh) {\pgfmathprintnumber[fixed,
+      precision=3]{\vgSValue}};
+}
+% \vgsbar prints S from \vgSValue so the caller controls rounding; set it first.
+\newcommand{\vgS}[1]{\def\vgSValue{#1}}
+
+% Convenience: bar + its own S value in one call.
+% \vgsbarS{<x>}{<Q>}{<U>}{<label>}{<state>}
+\newcommand{\vgsbarS}[5]{%
+  \pgfmathsetmacro{\vgStot}{#2+#3}\vgS{\vgStot}\vgsbar{#1}{#2}{#3}{#4}{#5}}
+
+% -----------------------------------------------------------------------------
+% 7. Annotations that make a frame a STEP rather than a snapshot.
+% -----------------------------------------------------------------------------
+% \vgselectmark{<node>}  -- gold ring: "the search chose this one"
+\newcommand{\vgselectmark}[1]{%
+  \draw[GoldPath, line width=1.4pt, rounded corners=3pt, opacity=0.9]
+    ($(#1.south west)+(-1.2mm,-1.2mm)$) rectangle
+    ($(#1.north east)+(1.2mm,1.2mm)$);}
+
+% \vgnewmark{<node>} -- green burst: "this node did not exist one frame ago"
+\newcommand{\vgnewmark}[1]{%
+  \node[star, star points=8, star point ratio=2.1, draw=IdeaGreen,
+        fill=IdeaGreen!20, line width=0.5pt, minimum size=5mm,
+        inner sep=0pt] at ($(#1.north east)+(0.5mm,0.5mm)$) {};}
+
+% \vgbackup[<bend>]{<from>}{<to>}{<value text>} -- the value walking home.
+%   The default bend swings the arrow WIDE so it does not cross the nodes it
+%   passes; if the label still collides, pass e.g. [bend right=70].
+%   The label sits on an opaque white patch so it stays readable over an edge.
+\newcommand{\vgbackup}[4][bend right=75]{%
+  \draw[vgbackprop, #1] (#2) to
+    node[pos=0.88, fill=white, inner sep=1pt, font=\tiny\bfseries,
+         text=IdeaGreen] {#4} (#3);}
+
+% \vglane{<from node>}{<to node>}{<lane x>}{<lane y>}{<label>}
+% Routes below the tree and up the outside margin using real waypoints, so the
+% path provably clears every node. Label is placed AT the lane, not along the path.
+\newcommand{\vglane}[5]{%
+  \draw[vgbackprop, rounded corners=4pt]
+    (#1.south) -- ++(0,-0.5) -- (#3,#4) -- (#3,0) -- (#2);
+  \node[font=\tiny\bfseries, text=IdeaGreen, fill=white, inner sep=1pt]
+    at (#3,{(#4)/2}) {#5};}
+
+% \vgdelta{<node>}{<text>} -- red/green "what changed" tag under a node
+\newcommand{\vgdeltaup}[2]{%
+  \node[vgtag, fill=IdeaGreen!15, text=IdeaGreen, below=1.2mm of #1] {#2};}
+\newcommand{\vgdeltadown}[2]{%
+  \node[vgtag, fill=PitfallRed!15, text=PitfallRed, below=1.2mm of #1] {#2};}
+
+% \vgcaptionbar{<x>}{<y>}{<width cm>}{<text>} -- the one-line "what changed"
+\newcommand{\vgframenote}[2]{%
+  \node[font=\footnotesize, text=NavyBlue, align=left, text width=#1] at (#2)}
+
+% -----------------------------------------------------------------------------
+% 8. Boards inside pictures.
+%
+%    \vgboardnode{<name>}{<coordinate WITH its own parentheses>}{<fen>}{<size>}
+%      correct:  \vgboardnode{b1}{(0,0)}{4k3/8/...}{9pt}
+%      correct:  \vgboardnode{b2}{(root.south)}{...}{9pt}
+%      WRONG:    \vgboardnode{b1}{0,0}{...}{9pt}
+%
+%    Two things here are not optional, and both produce the same misleading
+%    error ("A node must have a (possibly empty) label text") when omitted:
+%      1. the FEN must be brace-wrapped inside the key list: setfen={#3}
+%      2. the board must sit inside an \mbox
+% -----------------------------------------------------------------------------
+\newcommand{\vgboardnode}[4]{%
+  \node[vgboard] (#1) at #2 {\mbox{\chessboard[setfen={#3}, boardfontsize=#4,
+      showmover=false, hlabel=false, vlabel=false]}};}
+
+%    \vgboardnodex{<name>}{<coord>}{<fen>}{<size>}{<extra chessboard keys>}
+%    Same, but you may pass extra keys -- highlights, arrows.  See the two
+%    SAFE highlight idioms below; anything else risks hiding pieces.
+\newcommand{\vgboardnodex}[5]{%
+  \node[vgboard] (#1) at #2 {\mbox{\chessboard[setfen={#3}, boardfontsize=#4,
+      showmover=false, hlabel=false, vlabel=false, #5]}};}
+
+% ---- SAFE highlight idioms (copy these verbatim) ----------------------------
+%
+%  square outline (does NOT hide the piece standing there):
+%     pgfstyle=border, color=PitfallRed, linewidth=0.3ex, markfields={d7,e7,f7}
+%
+%  move arrow:
+%     pgfstyle=straightmove, color=GoldPath, arrow=to, markmoves={e6-f6}
+%
+%  *** DO NOT USE  pgfstyle=color + markfields  TO TINT SQUARES. ***
+%  It paints an opaque patch over the field and SILENTLY DELETES the piece
+%  standing on it.  This was verified: tinting the dark squares of the K+P
+%  position made the e5 pawn vanish from the diagram with no warning and no
+%  error.  A reader would simply see a different position from the one the
+%  numbers describe.  Outline squares; never fill them.
+
+% -----------------------------------------------------------------------------
+% 9. The legend.  Print it ONCE, on the first tree page, and refer back.
+% -----------------------------------------------------------------------------
+\newcommand{\vglegend}{%
+\begin{tikzpicture}[scale=1, every node/.style={font=\scriptsize}]
+  \node[vgnode, fill=BuildBlue!35, minimum width=14mm, minimum height=6mm]
+    (a) at (0,0) {\tiny Kd6};
+  \node[right=1.5mm of a, align=left, text width=32mm]
+    {\tiny expanded; fill darkens\\\tiny with visit count};
+  \node[vgunvisited, minimum width=14mm, minimum height=6mm]
+    (b) at (0,-1.05) {\tiny Kf5};
+  \node[right=1.5mm of b, align=left, text width=32mm]
+    {\tiny never visited --- its $Q$\\\tiny is a guess (FPU)};
+  \node[vgnew, minimum width=14mm, minimum height=6mm]
+    (c) at (0,-2.1) {\tiny Kf8};
+  \node[right=1.5mm of c, align=left, text width=32mm]
+    {\tiny created this iteration};
+  \node[vgrefuted, minimum width=14mm, minimum height=6mm]
+    (d) at (0,-3.15) {\tiny Kd5};
+  \node[right=1.5mm of d, align=left, text width=32mm]
+    {\tiny visited once, $Q$ collapsed:\\\tiny refuted};
+  \draw[vgpath] (5.6,0) -- (7.0,0);
+  \node[right=1.5mm, align=left, text width=32mm] at (7.0,0)
+    {\tiny the path walked this iteration};
+  \draw[vgbackprop] (5.6,-1.05) -- (7.0,-1.05);
+  \node[right=1.5mm, align=left, text width=32mm] at (7.0,-1.05)
+    {\tiny a value travelling back to the root};
+  \draw[vgedge, line width=2.4pt] (5.6,-2.1) -- (7.0,-2.1);
+  \node[right=1.5mm, align=left, text width=32mm] at (7.0,-2.1)
+    {\tiny edge thickness $=$ visits through it};
+  \draw[vgedgeghost] (5.6,-3.15) -- (7.0,-3.15);
+  \node[right=1.5mm, align=left, text width=32mm] at (7.0,-3.15)
+    {\tiny how it stood one frame ago};
+\end{tikzpicture}}
+
+\endinput

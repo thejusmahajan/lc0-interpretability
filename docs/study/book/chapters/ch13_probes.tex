@@ -1,0 +1,272 @@
+\chapter{Probes: reading a mind, and the traps in claiming you did}
+\label{ch:probes}
+
+\begin{objectives}
+\begin{itemize}
+\item Define an activation, and say exactly what object a probe is trained on.
+\item Build a linear probe --- and recognise it as the model of Chapter~\ref{ch:learned}, with
+  nothing added.
+\item Name the four ways a probe result can be worthless, and the control that defuses each.
+\item Distinguish \emph{information is present} from \emph{information is used}, and describe
+  the intervention that separates them.
+\item Write down what a probe with $92\%$ accuracy does and does not entitle you to say.
+\end{itemize}
+\end{objectives}
+
+\section{What there is to read}
+
+A forward pass through BT3 produces, at every layer, a $64\times768$ block of numbers: for
+each square, 768 quantities the network computed on its way to an answer. These are
+\textbf{activations}. They are not designed to mean anything to us --- nobody labelled
+dimension 412 --- but they are the only substrate the network has, so if the network
+"understands" anything, that understanding is a pattern in these numbers.
+
+\begin{keyidea}
+Interpretability is not mind-reading. It is a much humbler claim: \textbf{if a property of the
+position can be recovered from the activations by a simple rule, then the activations encode
+that property.} Everything hard about the subject is in the words "simple" and "encode".
+\end{keyidea}
+
+\section{A probe is Chapter 10, applied to the middle of a network}
+
+Fix a layer $l$ and a property you care about --- say, \emph{is square e5 attacked by White?}
+Collect a large set of positions, run each through the network, and record two things: the
+activation vector $\vv{x}^{(l)}_i \in \R^{768}$ at the square of interest, and the true
+answer $y \in \{0,1\}$, which you compute with an ordinary chess library. Now fit
+
+\begin{equation}
+  \label{eq:probe}
+  \hat{y} \;=\; \sigma\bigl(\vv{w}\cdot\vv{x}^{(l)}_i + b\bigr)
+\end{equation}
+
+by the gradient descent of Chapter~\ref{ch:learned}, with cross-entropy loss. That is the
+entire method. A \textbf{linear probe} is logistic regression on frozen activations.
+
+\begin{notationbox}
+\emph{Frozen} means the network's weights are not updated --- only $\vv{w}$ and $b$ are
+learned. The network is a fixed function; the probe is a ruler held against its insides.
+\end{notationbox}
+
+Two design choices carry all the meaning:
+
+\begin{itemize}
+\item \textbf{Which layer.} Probing layer 1 tells you about the input encoding; probing layer
+  14 tells you about what is about to become the output. The interesting claims are always
+  about the middle.
+\item \textbf{How simple the probe is.} This is the crux, and §13.3 is about why.
+\end{itemize}
+
+\begin{worked}{what a probe experiment looks like end to end}
+\emph{A concrete protocol, written out so it can be executed. Nothing here has been run in
+this project --- see the confidence note below.}
+\begin{enumerate}
+\item Sample 50{,}000 positions from the corpus in \texttt{games\_of\_derdiedasdie/}.
+\item For each, compute the label with \texttt{python-chess}: \emph{is the black king in
+  check within 2 plies against best play?} (or whatever property is under test).
+\item Run each position through the net with hooks on layer $l$ (\texttt{lczerolens}),
+  recording the $64\times768$ activation block.
+\item Split 80/20 into train and test, by \emph{game}, not by position --- positions from the
+  same game are near-duplicates and will leak.
+\item Fit Equation~\eqref{eq:probe}; report accuracy on the held-out games.
+\item Report the three baselines of §13.3 alongside it. Without them the number means nothing.
+\end{enumerate}
+\end{worked}
+
+\section{The four ways to fool yourself}
+
+A probe reaching $92\%$ accuracy feels like a discovery. It is not, on its own. Here are the
+four failures, each with the control that defuses it.
+
+\subsection{Trap 1: the probe learned the task itself}
+
+If a property is easy to compute from the board, a probe may be computing it from the
+activations' \emph{input} content rather than reading a representation the network built.
+A probe on layer 1 --- which is nearly the raw board --- can detect "there is a rook on this
+square" perfectly, and that tells you nothing about the network's understanding.
+
+\begin{keyidea}
+\textbf{Control 1: the input baseline.} Train the identical probe on the \emph{input}
+encoding $X^{(0)}$. The claim "layer 8 encodes property $p$" is only interesting to the extent
+that layer 8 beats layer 0. Report both numbers, always. A layer-8 accuracy of $92\%$ against
+a layer-0 accuracy of $90\%$ is a non-result dressed as a result.
+\end{keyidea}
+
+\subsection{Trap 2: a strong probe can extract anything}
+
+Give the probe a hidden layer, or two, and it becomes a neural network in its own right ---
+capable of \emph{computing} the property from raw material rather than reading it off. Taken
+far enough, "the activations encode $p$" degenerates into "the activations contain the
+position, and $p$ is a function of the position", which is true and empty.
+
+\begin{keyidea}
+\textbf{Control 2: keep the probe linear, and report its capacity.} The standard convention
+is a single linear layer for exactly this reason: if a \emph{linear} rule recovers the
+property, the network has done the hard part and laid the answer out in a readable way. If
+you need a two-layer probe, say so, and weaken the claim accordingly.
+\end{keyidea}
+
+\subsection{Trap 3: present but unused}
+
+This is the deepest one. Suppose layer 8 does encode "there is a knight fork available". It
+does not follow that the network \emph{uses} that information when choosing its move. Networks
+compute a great deal that ends up discarded --- residual streams carry information forward
+that later layers ignore.
+
+The distinction is not academic for your project: a suppressed-win detector is precisely a
+claim about information that is present and \emph{not} used, so the two must be measurable
+separately or the claim is unfalsifiable.
+
+\begin{keyidea}
+\textbf{Control 3: intervene.} Correlation is established by probing; causation requires
+changing something and seeing the output move. Two standard interventions:
+\begin{itemize}
+\item \textbf{Ablation:} zero out (or randomise) the activations at layer $l$ on the squares
+  in question, rerun the remaining layers, and see whether the policy changes. If it does not,
+  the information was not being used.
+\item \textbf{Activation patching:} take the activations from a \emph{different} position ---
+  identical except that the property is false --- and splice them in. If the output flips to
+  what the other position's output would be, you have shown that those activations carry the
+  effect.
+\end{itemize}
+\end{keyidea}
+
+\subsection{Trap 4: you searched a large space and reported the maximum}
+
+BT3 has 15 layers and 24 heads. Trying every combination and reporting the best is a
+multiple-comparisons problem: with 360 candidates, something will look striking by chance.
+Anyone who has run a backtest knows this failure by another name.
+
+\begin{keyidea}
+\textbf{Control 4: pre-register and re-test.} Decide the layer and the property \emph{before}
+looking, or --- if you must search --- hold out a completely separate set of positions and
+re-run only the winner on it. Report how many candidates you tried. A layer chosen from 360 by
+its performance needs its performance re-measured somewhere clean.
+\end{keyidea}
+
+\section{A worked interpretation}
+
+Suppose all four controls are run and the result is:
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Linear probe on layer 8 & $92\%$ \\
+Linear probe on layer 0 (input baseline) & $61\%$ \\
+Linear probe on a randomly-initialised network, layer 8 & $58\%$ \\
+Majority-class baseline & $55\%$ \\
+Ablating the relevant activations changes the top policy move & in $40\%$ of cases \\
+\bottomrule
+\end{tabular}
+\end{center}
+\emph{(Illustrative numbers, for the purpose of showing what a full report looks like.)}
+
+\begin{center}
+\begin{tabular}{@{}p{6.6cm}p{6.6cm}@{}}
+\toprule
+\textbf{You may say} & \textbf{You may not say} \\
+\midrule
+"A linear function of layer-8 activations predicts $p$ at $92\%$, against a $61\%$ input
+baseline." & "The network knows $p$." \\
+\addlinespace
+"The information is linearly available at layer 8 and largely absent at the input." &
+"Layer 8 computes $p$." (You have shown availability, not the mechanism.) \\
+\addlinespace
+"Ablating it changes the chosen move in $40\%$ of positions, so it is used at least
+sometimes." & "The network's move is caused by $p$." \\
+\addlinespace
+"On this network, this property, this position distribution." & "Chess networks represent
+$p$." \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{pitfall}
+The right-hand column is not pedantry --- it is the difference between a claim your tool can
+show a user and a claim that will eventually be embarrassing. This project's own history
+contains a metric that called quiet moves "sacrifices" because nothing checked material, and a
+batch of fabricated master annotations. Both were plausible, fluent and wrong. An
+interpretability result is far easier to produce in that style than a chess fact is, because
+nobody can check it by looking at the board.
+\end{pitfall}
+
+\section{What probes are actually good for here}
+
+Given all those caveats, why bother? Because the alternative --- reading only the final
+outputs --- discards everything the network computed on the way, and the project's north star
+is precisely to recover that.
+
+Three uses, in increasing order of ambition and decreasing order of safety:
+
+\begin{enumerate}
+\item \textbf{Verification.} Probe for something you can compute anyway (is this piece
+  pinned?) purely to establish that the layer is legible at all. Cheap, low-risk, and it
+  calibrates your baselines before you go looking for anything exciting.
+\item \textbf{Feature discovery.} Probe for properties your fact extractor already emits, to
+  find which of them the network actually represents. A fact the network does not encode is a
+  fact it cannot be "thinking about", which is directly relevant to the salience problem of
+  Chapter~\ref{ch:speak}.
+\item \textbf{Suppressed-win detection.} Probe for "a winning tactic exists here" and compare
+  with what the policy head does. This is Chapter~\ref{ch:lookahead}, and it is the one that
+  needs every control in this chapter.
+\end{enumerate}
+
+\begin{hypothesis}
+Nothing in this chapter has been run on \texttt{BT3-768x15x24h} in this project. The hooks
+exist (\texttt{backend/neural\_vision.py} already extracts intermediate activations for the
+attention display), so the machinery is close --- but no probe has been trained, no baseline
+measured, and no ablation performed. Until then, every claim of the form "the network
+internally sees $X$" is a plan, not a finding.
+\end{hypothesis}
+
+\begin{repobox}[title={in this repository}]
+The realistic first experiment is use 1 above: probe for a property your relational fact
+extractor computes deterministically (an absolute pin, say), on positions from your own
+corpus, with the input baseline. It is a day of work, it is falsifiable, and it establishes
+whether the interesting experiments are worth attempting on this net.
+\end{repobox}
+
+\begin{exercises}
+
+\exhead[the object]{ch13:object} What exactly does a probe take as input --- one number, 768
+numbers, or $64\times768$? Describe two different probe designs (per-square and whole-board)
+and a property suited to each.
+
+\exhead[probe = chapter 10]{ch13:same} Write down Equation~\eqref{eq:probe} and the model from
+§10.2.3 side by side. What differs, apart from where the input comes from? What is frozen in
+each case?
+
+\exhead[baselines]{ch13:baselines} A colleague reports "our layer-6 probe detects backward
+pawns at $88\%$". List the three numbers you must ask for before believing anything, and say
+what each would rule out.
+
+\exhead[capacity]{ch13:capacity} Why is a two-layer probe reaching $95\%$ weaker evidence than
+a linear probe reaching $85\%$? Answer in terms of what the probe might be doing rather than
+reading.
+
+\exhead[present vs used]{ch13:presentused} Construct a hypothetical case where a property is
+perfectly linearly decodable at layer 10 and yet has zero influence on the network's output.
+What experiment distinguishes your case from a genuine one?
+
+\exhead[designing an ablation]{ch13:ablation} You want to test whether the network's
+representation of a knight fork on e6 is used. Specify: what you zero out, what you rerun,
+what you measure, and what result would falsify the claim.
+
+\exhead[patching]{ch13:patching} Activation patching needs a pair of positions differing in
+one property. Explain why constructing such pairs is harder in chess than in language, and
+propose a way to build 100 such pairs from your corpus.
+
+\exhead[multiple comparisons]{ch13:multcomp} You try 15 layers and report the best. If each
+layer's accuracy were pure noise around $60\%$ with a standard deviation of $2$ points, what
+would the maximum of 15 draws look like? What does this imply about the headline you would
+have written?
+
+\exhead[writing the claim]{ch13:claim} Rewrite this sentence so it would survive review:
+"Layer 8 sees the winning sacrifice." Give the version you would put in a paper and the
+version you would show a user in the tool.
+
+\exhead[the cheap first experiment]{ch13:first} Design the smallest probe experiment that
+would tell you whether probing this net is worth pursuing at all. Specify the property, the
+positions, the baseline, the number you would need to see, and the number at which you would
+abandon the line of work.
+
+\end{exercises}

@@ -1,0 +1,280 @@
+/* SteeringLinesPanel.css — Premium glassmorphic dual-perspective chess lines */
+
+.steering-panel {
+  margin: 16px 0;
+  padding: 16px;
+  background: rgba(18, 18, 28, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  color: #f1f3f9;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Header & Tension Meter */
+.steering-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.steering-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.steering-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #a0aec0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tension-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tension-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tension-bar-fill {
+  height: 100%;
+  transition: width 0.4s ease, background 0.4s ease;
+  border-radius: 3px;
+}
+
+/* Sections */
+.lines-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.section-label.objective {
+  color: #00ffcc;
+}
+
+.section-label.tactical {
+  color: #ffaa00;
+}
+
+/* Line Cards */
+.line-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  cursor: pointer;
+  position: relative;
+}
+
+.line-card:hover {
+  transform: translateY(-1px);
+}
+
+.line-card.objective-card {
+  background: rgba(0, 255, 204, 0.04);
+  border: 1px solid rgba(0, 255, 204, 0.2);
+}
+
+.line-card.objective-card:hover {
+  background: rgba(0, 255, 204, 0.08);
+  border-color: rgba(0, 255, 204, 0.4);
+}
+
+.line-card.tactical-card {
+  background: rgba(255, 170, 0, 0.04);
+  border: 1px solid rgba(255, 170, 0, 0.22);
+}
+
+.line-card.tactical-card:hover {
+  background: rgba(255, 170, 0, 0.09);
+  border-color: rgba(255, 170, 0, 0.45);
+}
+
+.line-card.active-preview {
+  border-width: 2px;
+  box-shadow: 0 0 12px rgba(255, 170, 0, 0.25);
+}
+
+/* Card Header */
+.card-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.move-tag-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rank-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.objective-card .rank-badge {
+  background: rgba(0, 255, 204, 0.15);
+  color: #00ffcc;
+}
+
+.tactical-card .rank-badge {
+  background: rgba(255, 170, 0, 0.2);
+  color: #ffbb33;
+}
+
+.move-san-badge {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.metrics-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.eval-badge {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.eval-pos {
+  color: #00ffcc;
+}
+
+.eval-neg {
+  color: #ff3366;
+}
+
+.eval-even {
+  color: #e2e8f0;
+}
+
+.phi-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.phi-badge.danger {
+  background: rgba(255, 68, 68, 0.2);
+  color: #ff6666;
+  border: 1px solid rgba(255, 68, 68, 0.3);
+}
+
+.phi-badge.medium {
+  background: rgba(255, 170, 0, 0.2);
+  color: #ffaa00;
+  border: 1px solid rgba(255, 170, 0, 0.3);
+}
+
+.phi-badge.low {
+  background: rgba(0, 255, 204, 0.12);
+  color: #00ffcc;
+}
+
+/* Motifs Tags */
+.motifs-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.motif-pill {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e0;
+  text-transform: capitalize;
+}
+
+/* Move Sequence (PV) */
+.pv-sequence {
+  font-size: 0.82rem;
+  color: #e2e8f0;
+  line-height: 1.4;
+  word-break: break-word;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.action-btn {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.action-btn.play-btn {
+  border-color: rgba(0, 255, 204, 0.3);
+  color: #00ffcc;
+}
+
+.action-btn.play-btn:hover {
+  background: rgba(0, 255, 204, 0.2);
+}

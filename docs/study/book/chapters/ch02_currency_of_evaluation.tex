@@ -1,0 +1,368 @@
+\chapter{From \texorpdfstring{$+1.4$}{+1.4} to a probability: the currency of evaluation}
+\label{ch:currency}
+
+\begin{objectives}
+\begin{itemize}
+\item Say what a centipawn evaluation actually claims, and why the claim is empirical rather
+  than definitional.
+\item Build the logistic curve from scratch and use it to convert an evaluation into a
+  win probability.
+\item Read a WDL triple, convert between $(w,d,l)$, expected score, and $V$, and do it on
+  real Leela output.
+\item Explain --- with arithmetic --- why Monte-Carlo search requires probabilities and
+  would be broken by centipawns.
+\item Distinguish two positions with identical evaluations but opposite \emph{character},
+  and quantify the difference.
+\end{itemize}
+\end{objectives}
+
+\section{What does $+1.4$ mean?}
+
+A classical engine says $+1.4$. Ask what it means and you get "White is better by about a
+pawn and a half" --- which just restates the units. The honest answer is that a centipawn
+score means nothing on its own; it acquires meaning only through a claim about outcomes:
+\emph{positions that score $+1.4$ tend to be won by White at some particular rate.}
+
+That is an empirical statement. Somebody has to go and measure it, and the answer depends on
+who is playing --- $+1.4$ between two 1600s and $+1.4$ between two engines are different
+propositions about the future. Centipawns are a \textbf{unit of account}, not a unit of
+truth, and the exchange rate to reality has to be measured.
+
+Leela cuts out the middle step. Its network does not estimate "how many pawns"; it estimates
+\emph{the outcome distribution directly} --- how often this position is won, drawn, lost.
+That single design choice is the reason its numbers can be reasoned about, averaged, and
+combined, and it is what makes the search of Part~\textsc{ii} mathematically legitimate.
+
+\section{The score of a game, and expected score}
+
+Chess has three outcomes. Score them the way tournaments do:
+\[
+  \text{win} = 1, \qquad \text{draw} = \tfrac12, \qquad \text{loss} = 0 .
+\]
+If a position has win probability $w$, draw probability $d$ and loss probability $l$ (with
+$w + d + l = 1$), then the \textbf{expected score} is the average points you collect:
+\begin{equation}
+  \label{eq:expscore}
+  \E[\text{score}] \;=\; 1\cdot w \;+\; \tfrac12 \cdot d \;+\; 0 \cdot l
+  \;=\; w + \tfrac{d}{2}.
+\end{equation}
+
+Engines prefer a symmetric scale running from $-1$ (lost) through $0$ (balanced) to $+1$
+(won). Rescale by $V = 2\,\E[\text{score}] - 1$:
+\[
+V = 2\left(w + \tfrac{d}{2}\right) - 1 = 2w + d - 1 .
+\]
+Since $d = 1 - w - l$, this collapses to something you can compute in your head:
+
+\begin{finalform}[The value of a position]
+\begin{equation}
+  \label{eq:VfromWDL}
+  \boxed{\;V \;=\; w - l\;}
+\end{equation}
+Draw probability does not appear. $V$ is simply how much more likely you are to win than to
+lose. It ranges over $[-1,+1]$ and is stated \emph{from the point of view of the side to
+move} (Chapter~\ref{ch:problem}'s negamax convention).
+\end{finalform}
+
+\begin{worked}{reading real Leela output}
+Leela's verbose output reports two of the three numbers: \texttt{WL} (which is exactly
+$V = w-l$) and \texttt{D} (which is $d$). Recover $w$ and $l$ by solving the pair
+$w - l = \texttt{WL}$, $w + l = 1 - \texttt{D}$:
+\begin{equation}
+  \label{eq:recoverwdl}
+  w = \frac{1 - \texttt{D} + \texttt{WL}}{2}, \qquad
+  l = \frac{1 - \texttt{D} - \texttt{WL}}{2}.
+\end{equation}
+For the initial position, the engine in \texttt{engine/} reports
+$\texttt{WL} = +0.0946$, $\texttt{D} = 0.461$:
+\[
+w = \frac{1 - 0.461 + 0.0946}{2} = \frac{0.6336}{2} = 0.3168, \qquad
+l = \frac{1 - 0.461 - 0.0946}{2} = \frac{0.4444}{2} = 0.2222 .
+\]
+\end{worked}
+
+\begin{realdata}[title={Real engine output: five positions, four currencies}]
+Produced by \texttt{tools/collect\_engine\_data.py} with the network
+\texttt{engine/791556.pb.gz}; the Stockfish column is Stockfish 16.1 at depth 30, used as an
+independent referee.
+
+\begin{center}\small
+\begin{tabular}{@{}lrrrrl@{}}
+\toprule
+Position & $w$ & $d$ & $l$ & $V = w-l$ & Stockfish d30 \\
+\midrule
+Initial position                 & 0.317 & 0.461 & 0.222 & $+0.095$ & $+0.35$ \\
+Opposition draw (K+P, §2.6)      & 0.003 & 0.997 & 0.000 & $+0.003$ & $0.00$ \\
+K+P, White to move (won)         & 0.942 & 0.058 & 0.000 & $+0.942$ & mate in 12 \\
+Same, Black to move (lost)       & 0.000 & 0.052 & 0.948 & $-0.948$ & mate in 16 \\
+Morphy position before 16.Qb8+   & 0.713 & 0.193 & 0.094 & $+0.620$ & \textbf{mate in 2} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{realdata}
+
+That last row is worth a pause, because it is a lesson the rest of the book keeps returning
+to. In a position with a forced mate in two on the board, this network's evaluation is
+$+0.62$ --- "clearly better, probably winning". It is not lying and it is not broken. It is
+reporting \emph{how positions of this kind tend to go}, which is not the same as
+\emph{what is true here}. Finding the mate is the search's job (you will watch it happen, in
+real numbers, in Chapter~\ref{ch:readingtree}).
+
+\section{Converting a centipawn score into a probability}
+
+You will constantly need to move between the two currencies, since Stockfish speaks
+centipawns and Leela speaks probabilities. The bridge is a curve we can build from scratch.
+
+\subsection{Building the logistic function}
+
+We need a function that takes an evaluation $x$ (any real number, positive or negative) and
+returns a probability (between 0 and 1). Build it in three steps.
+
+\begin{attempt}{1}{a straight line}
+$p = \tfrac12 + kx$. Fails immediately: at $x = +10$ it returns a probability above 1. Any
+straight line eventually leaves $[0,1]$. We need something that \emph{saturates}.
+\end{attempt}
+
+\begin{attempt}{2}{work with odds instead}
+Instead of probability, use \textbf{odds} $= p/(1-p)$: a probability of $0.75$ is odds of
+$3$. Odds live in $(0,\infty)$ --- half the problem gone. And odds \emph{multiply} naturally:
+doubling your advantage should double your odds, not add a fixed amount of probability.
+Take logs and the multiplication becomes addition:
+\[
+\log\text{-odds} = \ln\frac{p}{1-p} \in (-\infty, +\infty).
+\]
+Now \emph{that} is a scale on which a linear model is sensible. So posit the simplest
+possible relationship:
+\[
+\ln\frac{p}{1-p} \;=\; k\,x .
+\]
+\end{attempt}
+
+\begin{attempt}{3}{solve it back for $p$}
+Exponentiate: $\frac{p}{1-p} = e^{kx}$, so $p = (1-p)e^{kx}$, so $p(1 + e^{kx}) = e^{kx}$:
+\[
+p = \frac{e^{kx}}{1+e^{kx}} = \frac{1}{1+e^{-kx}} .
+\]
+\end{attempt}
+
+\begin{finalform}[The logistic (sigmoid) function]
+\begin{equation}
+  \label{eq:logistic}
+  \sigma(z) \;=\; \frac{1}{1+e^{-z}}, \qquad
+  p(\text{win-ish}) \;=\; \sigma(k\,x)
+\end{equation}
+with $x$ the evaluation and $k$ a scale constant \emph{fitted to data}, not derived. Note
+$\sigma(0) = 1/2$, $\sigma(+\infty) = 1$, $\sigma(-\infty) = 0$, and the symmetry
+$\sigma(-z) = 1 - \sigma(z)$.
+\end{finalform}
+
+You will meet $\sigma$ three more times in this book, wearing different hats: as the output
+of a value head (Chapter~\ref{ch:heads}), as the thing that turns a linear probe's raw score
+into a probability (Chapter~\ref{ch:probes}), and as the single-neuron ancestor of the whole
+network (Chapter~\ref{ch:learned}). It is the same function every time. Learn it once.
+
+\begin{worked}{calibrating and checking the conversion}
+A common fitted value (used by Lichess for its evaluation bars) is
+$\text{expected score} = \sigma(0.00368\,\text{cp})$, with cp in centipawns.
+
+Take Stockfish's $+35$ centipawns for the initial position:
+\[
+\sigma(0.00368 \times 35) = \sigma(0.1288) = \frac{1}{1+e^{-0.1288}}
+= \frac{1}{1+0.8792} = 0.5321 .
+\]
+Expected score $0.532$, so by Equation~\eqref{eq:expscore} rescaled,
+$V = 2(0.532)-1 = +0.064$.
+
+Leela's own answer for the same position was $V = +0.095$ (§2.2). Two engines, two
+architectures, two definitions --- and they agree that the first move is worth about
+$0.06$--$0.10$ of a game result, i.e.\ that White scores about $53\%$ from the start. That is
+a genuine, checkable cross-validation of the conversion, and about as much precision as the
+conversion deserves.
+\end{worked}
+
+\begin{pitfall}
+The constant $k$ is not a law of nature. It depends on \emph{whose} games were used to fit
+it: at club level, a $+1.5$ position is won far less reliably than between engines, so the
+same centipawn number maps to a different probability. Any tool that displays "White wins
+$78\%$" must be able to say \emph{$78\%$ of the time, between whom}. This is the first place
+in this book where a number can be technically correct and pedagogically dishonest, and it
+will not be the last.
+\end{pitfall}
+
+\section{Why the search needs probabilities}
+
+Here is the argument that makes this chapter structural rather than cosmetic. Monte-Carlo
+search does exactly one thing with the numbers coming back from the network: it
+\textbf{averages} them (Chapter~\ref{ch:onemachine}, $Q = W/N$). So the question is whether
+averaging is a meaningful operation in each currency.
+
+\begin{worked}{averaging in two currencies}
+A move leads to two equally likely continuations. In one, you emerge a queen up; in the
+other, you are mated.
+
+\textbf{In centipawns:} the two leaves score $+900$ and $-\infty$ (mate). What is the average?
+The question is not even well-posed --- engines have to fake it with a large finite number
+like $\pm 32000$, and then the average of $+900$ and $-32000$ is $-15550$, a number that
+corresponds to no position and no fact. Worse, the scale is not linear in anything: being
+$+900$ is not "nine times better" than being $+100$, because both are usually just winning.
+
+\textbf{In probabilities:} the two leaves score $V = +1$ and $V = -1$. The average is $0$,
+and the average \emph{means something exact}: half the futures examined are won and half are
+lost, so the expected score is $\tfrac12$ --- a coin flip. That is a true and useful summary
+of the position, and it is the number a player would want.
+\end{worked}
+
+\begin{keyidea}
+Probabilities are \emph{averageable}: the average of a set of win probabilities is itself a
+win probability, and it is the win probability you would get by picking one of those futures
+at random. Centipawns have no such property. Since Monte-Carlo search \emph{is} averaging,
+Leela's value head is not a stylistic choice --- it is the thing that makes the search
+coherent. An engine cannot back up centipawns through a Monte-Carlo tree without inventing
+meaning it does not have.
+\end{keyidea}
+
+There is a caveat that costs a paragraph, because it will come back in
+Chapter~\ref{ch:engineering}. Averaging is the right operation for "what does a random
+future look like", but it is the \emph{wrong} operation for "what happens with best play".
+If one of my two continuations is a forced mate against me, the position is lost, not a coin
+flip --- my opponent will simply choose it. The average of $+1$ and $-1$ being $0$ is exactly
+the minimax-versus-averaging tension, and every Monte-Carlo engine has to manage it. It is
+managed, not solved: the search visits the losing branch more and more, dragging the average
+down, so the answer converges to the truth without ever being computed as a minimum. The
+speed of that convergence is a real limitation of the method and one of the honest
+disadvantages of Leela versus alpha--beta on sharp forcing positions.
+
+\section{Sharpness: two positions, one evaluation}
+
+Because $V = w - l$ discards $d$, a single number cannot tell you what kind of fight you are
+in. Two positions can share $V \approx 0$ and be nothing alike:
+
+\begin{center}
+\begin{tabular}{@{}lrrrrl@{}}
+\toprule
+ & $w$ & $d$ & $l$ & $V$ & Character \\
+\midrule
+Position A & 0.05 & 0.90 & 0.05 & $0.00$ & dead level; hard to lose, hard to win \\
+Position B & 0.45 & 0.10 & 0.45 & $0.00$ & mutual minefield; someone is going to be wrong \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\emph{(Illustrative numbers.)} These demand opposite treatment from a training tool, and
+opposite treatment from you at the board. A single evaluation bar cannot distinguish them.
+The WDL triple can, and this is the cheapest, most under-used signal Leela produces.
+
+Define a \textbf{sharpness} measure as the probability that the game is \emph{decided}:
+\begin{equation}
+  \label{eq:sharpness}
+  \text{sharp}(s) \;=\; w + l \;=\; 1 - d .
+\end{equation}
+Position A scores $0.10$; position B scores $0.90$. Same $V$, ninefold difference in what is
+at stake. And it is not a hand-waving construction --- the engine really does report it:
+
+\begin{realdata}[title={Real engine output: draw probability separates the positions}]
+\begin{center}
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+Position & $d$ & sharp $= 1-d$ & \\
+\midrule
+Opposition draw (K+P)           & 0.997 & 0.003 & nothing can happen \\
+Initial position                & 0.461 & 0.539 & a normal game \\
+Morphy position (before Qb8+)   & 0.193 & 0.807 & something is about to be decided \\
+K+P, White to move              & 0.058 & 0.942 & already decided \\
+\bottomrule
+\end{tabular}
+\end{center}
+Note that the last two rows have very different $V$ ($+0.62$ vs $+0.94$) but similar
+sharpness --- and the first two have similar $V$ (both near $0$) and utterly different
+sharpness. The two numbers are genuinely independent axes.
+\end{realdata}
+
+\begin{keyidea}
+$V$ tells you \emph{who} stands better. $1-d$ tells you \emph{whether it matters yet}. Your
+project's interest in "sharp, dynamic chess" is, in this vocabulary, an interest in
+positions with high $1-d$ --- and Chapter~\ref{ch:style} shows that you can steer an engine
+towards them by writing that preference into an objective function.
+\end{keyidea}
+
+\subsection{What Leela's other columns mean}
+
+While we are here, the rest of a verbose line, so nothing in this book is mysterious later:
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\texttt{V} & the network's raw evaluation of this move's position: one forward pass, no search \\
+\texttt{WL} & $w - l$ of the current node, i.e.\ $V$ after search \\
+\texttt{D} & draw probability $d$ \\
+\texttt{M} & predicted number of plies remaining in the game (a third head; see ch.~\ref{ch:heads}) \\
+\texttt{N} & visits (Chapter~\ref{ch:onemachine}) \\
+\texttt{P} & policy prior (Chapter~\ref{ch:puct}) \\
+\texttt{Q} & running average of everything backed up through this move \\
+\texttt{U} & the exploration bonus (Chapter~\ref{ch:puct}) \\
+\texttt{S} & $Q + U$: the PUCT score that actually decides where to look next \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+By Chapter~\ref{ch:byhand} you will be able to compute \texttt{U} and \texttt{S} yourself
+from the other columns, and check the engine's arithmetic. You will find it checks out to
+five decimal places.
+
+\begin{repobox}[title={in this repository}]
+The WDL triple is already plumbed through this project: the frontend's evaluation display and
+the "character of the fight" language in the design documents both come from $d$. The
+sharpness quantity $1-d$ of Equation~\eqref{eq:sharpness} is the simplest ancestor of the
+tactical-steering score you build in Chapter~\ref{ch:sharpness}.
+\end{repobox}
+
+\begin{exercises}
+
+\exhead[conversions]{ch2:convert} A position has $w = 0.55$, $d = 0.30$, $l = 0.15$. Compute
+the expected score and $V$. Another has $w = 0.40$, $d = 0.60$, $l = 0.00$. Which has the
+larger $V$? Which would you rather have, and why might the answer depend on the tournament
+situation rather than the position?
+
+\exhead[recovering WDL]{ch2:recover} Leela reports $\texttt{WL} = -0.312$, $\texttt{D} =
+0.244$. Recover $w$, $d$, $l$ with Equation~\eqref{eq:recoverwdl} and check they sum to 1.
+Whose point of view are these from, and what changes if it is Black to move?
+
+\exhead[the logistic by hand]{ch2:logistic} Compute $\sigma(z)$ for $z = -2, -1, 0, 1, 2$.
+Sketch the curve. Where is it steepest, and what does that steepness say about which
+positions an extra tenth of a pawn matters most in?
+
+\exhead[centipawns to probability]{ch2:cp2p} Using $\sigma(0.00368\,\text{cp})$, convert
+$+50$, $+150$, $+300$ and $+800$ centipawns into expected scores. Compute the difference in
+expected score between $+50$ and $+150$, and between $+700$ and $+800$. Both are a
+100-centipawn gain --- explain in one sentence why they are worth wildly different amounts.
+
+\exhead[the ratings problem]{ch2:ratings} $k$ in Equation~\eqref{eq:logistic} is fitted to a
+population. Should $k$ be larger or smaller when fitting to 1200-rated players than to
+engines? Draw both curves on the same sketch, and say what this implies for a training tool
+that shows you a win probability.
+
+\exhead[averaging]{ch2:averaging} A move has four sampled continuations with
+$V = +0.9, +0.8, +0.85, -1.0$. Compute the average. Now suppose the $-1.0$ is a forced mate
+against you that the opponent can choose. What is the position actually worth? Explain the
+discrepancy in terms of §2.4, and say what the search must do to fix it.
+
+\exhead[sharpness]{ch2:sharp} Two positions: $(w,d,l) = (0.30,0.55,0.15)$ and
+$(0.30,0.20,0.50)$. Compute $V$ and $1-d$ for both. Write the one-sentence description a
+coach should give of each, using no chess terms at all.
+
+\exhead[designing a display]{ch2:display} You must show a position's evaluation in your
+tool using at most two visual elements. Argue for a specific choice of the two quantities to
+display, given a user who wants sharp, dynamic play. What would be lost by showing the
+classical single bar?
+
+\exhead[the mate that reads as $+0.62$]{ch2:mate62} In §2.2, a position with mate in two
+was evaluated by the network at $V = +0.62$. Explain why this is not a bug, using the word
+"population" in your answer. Then say what would have to change for the number to become
+$+1.0$, and which chapter of this book is about that change.
+
+\exhead[a calibration experiment]{ch2:calibration} Design (do not run) an experiment on your
+9{,}030-game corpus that would measure the true $k$ for \emph{your} games: what would you
+compute, what would you plot, and what would the plot look like if the standard $k$ were too
+large? Be specific about the buckets.
+
+\end{exercises}
