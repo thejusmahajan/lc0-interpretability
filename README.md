@@ -20,9 +20,9 @@ A detailed technical breakdown of the orientation bug, the diagnostic procedure,
 
 ## Correctness & Mutation Testing
 
-The analysis pipeline and backend services are verified by a comprehensive suite of **345 automated tests**.
+The analysis pipeline and backend services are covered by **345 automated tests** (`pytest --collect-only`).
 
-Correctness is guarded via mutation testing: test cases were verified against deliberate mutations in the hook extraction logic, coordinate transformations, and data contracts to confirm that any regression or inverted frame produces an immediate test failure. In this suite, passing tests serve as empirical verification that invariants hold across both player perspectives and varying game phases.
+The key guards are mutation-checked: the code a test protects was deliberately broken to confirm the test fails, then restored. **89 of the 345 tests, in 14 of the 56 test files, document such a check**, among them the batched-saliency and cache-replay identity guards, the side-to-move (point-of-view) handling in `test_tactics_pov.py`, and the relational-fact detectors. The remaining tests are ordinary regression and behaviour tests and have not been mutation-checked.
 
 ---
 
